@@ -55,24 +55,41 @@ def get_categories():
     return categories
 
 
+# Get "all" items from a given category(under "View all Comedy/drama A-Z")
+def get_cats_a_z(cats_href):
+    r = requests.get(url=cats_href, headers=hdr)
+    soup = BeautifulSoup(r.content, "html.parser")
+    view_az = base_url + soup.find("a", {"class": ["button", "button--clickable"]}).get("href")
+    return listing_index(view_az)
+
+
 # Lists any index page(home and links after a category). However not A-Z pages(see a_z())
 def listing_index(index_url):
     items = []
     r = requests.get(url=index_url, headers=hdr)
     soup = BeautifulSoup(r.content, "html.parser")
-    el = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
-    for e in el:
-        if e.get("data-object-type") == "editorial-promo":
-            continue
-        el_info = e.get("aria-label")
-        el_href = e.get("href")
-        iplayer_item = BBCShow()
-        iplayer_item.href = base_url + el_href
-        iplayer_item.title = el_info.split("Description")[0][:-2]
-        iplayer_item.category = el_info.split("Description")[1].split(".")[0][2:]
-        iplayer_item.additional = el_info.split("Description")[1].split(".")[1][1:]
-        iplayer_item.duration = el_info.split("Duration")[1].split(".")[0][2:]
-        items.append(iplayer_item)
+    while True:
+        el = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
+        for e in el:
+            if e.get("data-object-type") == "editorial-promo":
+                continue
+            el_info = e.get("aria-label")
+            el_href = e.get("href")
+            iplayer_item = BBCShow()
+            iplayer_item.href = base_url + el_href
+            iplayer_item.title = el_info.split("Description")[0][:-2]
+            iplayer_item.category = el_info.split("Description")[1].split(".")[0][2:]
+            iplayer_item.additional = el_info.split("Description")[1].split(".")[1][1:]
+            iplayer_item.duration = el_info.split("Duration")[1].split(".")[0][2:]
+            items.append(iplayer_item)
+            # DISABLED == lnk pagination__direction pagination__direction--next pagination__direction--large lnk--disabled
+        # Suck data from every page
+        next_page = soup.find("a", {"class": ["pagination__direction--next"]})
+        if next_page is None or 'lnk--disabled' in next_page.attrs['class']:    # Last page
+            break
+        else:
+            r = requests.get(url=index_url + next_page.get("href"), headers=hdr)
+            soup = BeautifulSoup(r.content, "html.parser")
     return items
 
 
@@ -234,8 +251,11 @@ def a_z(letter):
         return
 
 
+
+
 # TODO Fix download() and make it usable
 if __name__ == "__main__":
+
     index = iplayer_url
 
     autoplay = True
@@ -253,8 +273,8 @@ if __name__ == "__main__":
             for i, cat in enumerate(cats):
                 print("{0}: {1}".format(i + 1, cat.title))
             c = int(input("> "))
-            index = cats[c].href
-            items = listing_index(index)
+            index = cats[c - 1].href
+            items = get_cats_a_z(index)
             chosen_serie = results(items)
         elif c == "4":
             letter = input("[A...Z]: ")
