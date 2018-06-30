@@ -6,11 +6,19 @@ import requests
 import sys
 
 # TODO geo-bypass in ytdl?
+# TODO Episode name needs cleaning(leftover spaces and stops)
 
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
                 Chrome/42.0.2311.90 Safari/537.36'}
 iplayer_url = "https://www.bbc.co.uk/iplayer"
 base_url = "https://www.bbc.co.uk"
+
+
+class Colours:
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    END = '\033[0m'
 
 
 class BBCShow:
@@ -27,6 +35,7 @@ class BBCEpisode:
     title = ""
     episode_number = 0
     duration = ""
+
 
 class BBCCategory:
     href = ""
@@ -119,16 +128,20 @@ def listing_serie(parent_serie):
     else:   # if that method returns False, it didn't find any episodes
         return parent_serie
     # Shows are distributed within pages(if there are more than x episodes), this will loop through each page and collect episodes from them
-    for i in range(6):  # TODO Fix this
+    while True:
         try:
             # This is the link that the "next" button refers to.
-            next_page = soup.find("a", {"class": ["lnk pagination__direction", "pagination__direction--next", "pagination__direction--large"]}).get("href")
+            next_page_a = soup.find("a", {"class": "pagination__direction--next"})
+            # if "Next" has class lnk--disabled, we're on the last page
+            if next_page_a is None or 'lnk--disabled' in next_page_a.attrs['class']:
+                break
+            next_page = next_page_a.get('href')
         # None was returned(no more pages or no additional pages at all) and .get() raises AE
         except AttributeError:
             break
         r_next = requests.get(url=r.url + next_page, headers=hdr)
-        next_soup = BeautifulSoup(r_next.content, "html.parser")
-        episodes += get_eps_in_page(next_soup)
+        soup = BeautifulSoup(r_next.content, "html.parser")
+        episodes += get_eps_in_page(soup)
     return episodes
 
 
@@ -176,7 +189,8 @@ def play(episodes, all_eps):
         if len(episodes) > 1:
             for ep in episodes:
                 play_msg(ep)
-                subprocess.call(["mpv", ep.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # subprocess.call(["mpv", ep.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.call(["mpv", ep.href])
                 if ep == episodes[-1]:  # If episode was not the last on the list, continue loop
                     return
         # ... Otherwise autoplay next episode
@@ -191,13 +205,16 @@ def play(episodes, all_eps):
                     else:
                         return
 
+
 def play_msg(episode):
     try:
-        print("PLAYING {0} - {1}. Press Q to STOP playback.".format(episode.show_name, episode.title))
+        print("PLAYING " + Colours.GREEN + episode.show_name.upper() + Colours.END + " - " + Colours.BLUE + episode.title.upper() +
+              Colours.END + "Press Q to STOP playback.")
     except AttributeError:  # If it's a one part show
-        print("PLAYING {0}. Press Q to STOP playback.".format(episode.title))
+        print("PLAYING " + Colours.GREEN + episode.title.upper() + Colours.END + ". Press Q to STOP playback.".format(episode.title))
 
-# TODO Not working
+
+# TODO Not working ATM
 def download(episode):
     ydl_opts = {"hls_prefer_native": True}
     ydl_opts['outtmpl'] = "%(title)s.%(ext)s"
@@ -249,18 +266,6 @@ def a_z(letter):
         iplayer_item.href = base_url + item.get("href")
         series.append(iplayer_item)
     return series
-    '''
-    for i, serie in enumerate(series):
-        print("{0}: {1}".format(i + 1, serie.title))
-    c = input("> ")
-    ind = c.split(" ")
-    try:
-        ind = [int(j) - 1 for j in ind]  # Make selection array into integers
-        return [series[i] for i in ind]  # Pick items by selected indices
-    except (ValueError, IndexError):  # At least one item is not an int or the selection can't be matched with the series list
-        print("Invalid selection")
-        return
-    '''
 
 
 # This function formats and lists "results" and asks for the input. Merely there to reduce redundancy in __main__
@@ -272,7 +277,11 @@ def results(items):
         if len(items) == 1:
             return items[0]
     for i, ser in enumerate(items):
-        print("{0}: {1}({2})".format(i + 1, ser.title, ser.duration))
+        if ser.duration:
+            print("{0}: {1}({2})".format(i + 1, Colours.RED + ser.title + Colours.END,
+                                         Colours.BLUE + ser.duration + Colours.END))
+        else:   # If series are from A-Z, there's no clean way to find out the duration
+            print("{0}: {1}".format(i + 1, Colours.RED + ser.title + Colours.END))
     c = input("> ")
     if c == "c":
         return
