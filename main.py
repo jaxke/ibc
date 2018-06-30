@@ -33,7 +33,13 @@ class BBCCategory:
     title = ""
 
 
-# tvip-cats tvip-nav-clearfix
+''' 
+Notes:
+aria-label holds important bits of info in iPlayer's HTML
+'''
+
+
+# Lists all categories from the top menu
 def get_categories():
     categories = []
     r = requests.get(url=iplayer_url, headers=hdr)
@@ -49,6 +55,7 @@ def get_categories():
     return categories
 
 
+# Lists any index page(home and links after a category). However not A-Z pages(see a_z())
 def listing_index(index_url):
     items = []
     r = requests.get(url=index_url, headers=hdr)
@@ -69,6 +76,7 @@ def listing_index(index_url):
     return items
 
 
+# Once a serie is chosen, this will gather all episodes from it
 # TODO Does not work for a serie with no View all button
 def listing_serie(parent_serie):
     episodes = []
@@ -85,10 +93,12 @@ def listing_serie(parent_serie):
         episodes += get_eps_in_page(soup)
     else:   # if that method returns False, it didn't find any episodes
         return parent_serie
+    # Shows are distributed within pages(if there are more than x episodes), this will loop through each page and collect episodes from them
     for i in range(6):  # TODO Fix this
         try:
+            # This is the link that the "next" button refers to.
             next_page = soup.find("a", {"class": ["lnk pagination__direction", "pagination__direction--next", "pagination__direction--large"]}).get("href")
-        # Nonetype was not returned and .get() raises AE
+        # None was returned(no more pages or no additional pages at all) and .get() raises AE
         except AttributeError:
             break
         r_next = requests.get(url=r.url + next_page, headers=hdr)
@@ -97,6 +107,7 @@ def listing_serie(parent_serie):
     return episodes
 
 
+# This is used by listing_serie and will return episodes from a page
 def get_eps_in_page(soup):
     episodes = []
     try:
@@ -114,6 +125,9 @@ def get_eps_in_page(soup):
     except AttributeError:
         return    # This is a one-part show
 
+
+# One-episode shows have this special type of link that has to be dug from the source once again(the href in its parameter is not a video link)
+# <link rel="canonical" href="..." > We want this href.
 def extract_link(href):
     r = requests.get(url=href, headers=hdr)
     soup = BeautifulSoup(r.content, "html.parser")
@@ -123,13 +137,14 @@ def extract_link(href):
             if link.get("rel")[0] == "canonical":
                 return link.get("href")
 
+
 def play(episode, all_eps):
     # Is a one part "show", maybe a documentary etc... OR autoplay is disabled
     if isinstance(episode, BBCShow) or not all_eps:
         real_link = extract_link(episode.href)
         print("PLAYING " + episode.title + ". Press Q to STOP playback.")
-        #subprocess.call(["mpv", episode.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.call(["mpv", episode.href])
+        subprocess.call(["mpv", real_link], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Autoplay
     else:
         ep_index = all_eps.index(episode)
         for i in range(ep_index, len(all_eps)):
@@ -150,7 +165,8 @@ def download(episode):
         ydl.download([episode.href])
 
 
-# Only finds items in first page, rest are usually irrelevant(and dev is lazy)
+# TODO Only finds items in first page, rest are usually irrelevant(and dev is lazy)
+# List all shows returned by a search
 def search(phrase):
     search_url = "https://www.bbc.co.uk/iplayer/search?q=" + phrase.replace(" ", "+")
     found_items = []
@@ -160,6 +176,7 @@ def search(phrase):
     return found_items
 
 
+# Pagination function can be added by improving this function but... dev == "lazy"
 def cycle_over_search_page(soup):
     found_items = []
     a = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
@@ -177,6 +194,7 @@ def cycle_over_search_page(soup):
     return found_items
 
 
+# This function formats and lists "results" and asks for the input. Merely there to reduce redundancy in __main__
 def results(items):
     # "items" is a singular BBCShow and therefore there are no episodes of it, it's playable by itself(maybe 1-part documentary)
     if isinstance(items, BBCShow):
@@ -195,6 +213,7 @@ def results(items):
         return False
 
 
+# Scaper for the A-Z page: list every show in iPlayer by letters.
 def a_z(letter):
     series = []
     az_url = "https://www.bbc.co.uk/iplayer/a-z/" + letter
@@ -217,8 +236,6 @@ def a_z(letter):
 
 # TODO Fix download() and make it usable
 if __name__ == "__main__":
-    print(extract_link('https://www.bbc.co.uk/iplayer/brand/p067bnvw'))
-    sys.exit(0)
     index = iplayer_url
 
     autoplay = True
@@ -245,6 +262,7 @@ if __name__ == "__main__":
         elif c.lower() == "q":
             break
         if not chosen_serie:
+            print("come on mate")
             continue
         serie_view = chosen_serie
         episodes = listing_serie(chosen_serie)
