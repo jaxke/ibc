@@ -31,7 +31,7 @@ def listing_index(index_url):
     r = requests.get(url=index_url, headers=hdr)
     soup = BeautifulSoup(r.content, "html.parser")
     el = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
-    for e in el: # TODO CLEAN THE SHIT OUT OF THIS
+    for e in el:
         if e.get("data-object-type") == "editorial-promo":
             continue
         el_info = e.get("aria-label")
@@ -48,7 +48,6 @@ def listing_index(index_url):
 
 # lnk pagination__direction pagination__direction--next pagination__direction--large
 # TODO Does not work for a serie with no View all button
-# TODO Does not find anything beyond first page
 def listing_serie(parent_serie):
     episodes = []
     r = requests.get(url=parent_serie.href, headers=hdr)
@@ -64,8 +63,12 @@ def listing_serie(parent_serie):
         episodes += get_eps_in_page(soup)
     else:   # if that method returns False, it didn't find any episodes
         return parent_serie
-    for i in range(6):
-        next_page = soup.find("a", {"class": ["lnk pagination__direction", "pagination__direction--next", "pagination__direction--large"]}).get("href")
+    for i in range(6):  # TODO Fix this
+        try:
+            next_page = soup.find("a", {"class": ["lnk pagination__direction", "pagination__direction--next", "pagination__direction--large"]}).get("href")
+        # Nonetype was not returned and .get() raises AE
+        except AttributeError:
+            break
         r_next = requests.get(url=r.url + next_page, headers=hdr)
         next_soup = BeautifulSoup(r_next.content, "html.parser")
         episodes += get_eps_in_page(next_soup)
@@ -83,15 +86,37 @@ def get_eps_in_page(soup):
             #ep.show_name = parent_serie.title
             ep.title = el_info.split("Description")[0]
             episodes.append(ep)
-        return episodes[::-1]
+        # return episodes[::-1]
+        return episodes
     except AttributeError:
         return    # This is a one-part show
 
 
-def play(episode):
-     '''for n in range(first_to_play, len(episodes)):
-        subprocess.call(["mpv", episodes[n].href])'''
-     subprocess.call(["mpv", episode.href])
+# TODO autoplay next?
+def play(episode, all_eps):
+    if isinstance(episode, BBCShow):  # Is a one part "show", maybe a documentary etc...
+        subprocess.call(["mpv", episode.href])
+    else:
+        ep_index = all_eps.index(episode)
+        for i in range(len(all_eps)):
+            if all == episode:
+                subprocess.call(["mpv", episode.href])
+                if str(input("Watch next episode Y/N: ")).lower() == "y":
+                    continue
+        for i in range(ep_index, len(all_eps)):
+            subprocess.call(["mpv", all_eps[i].href])
+            if i != len(all_eps) - 1:
+                if str(input("Watch next episode Y/N: ")).lower() == "y":
+                    continue
+                else:
+                    return
+
+
+def download(episode):
+    ydl_opts = {"hls_prefer_native": True}
+    ydl_opts['outtmpl'] = "%(title)s.%(ext)s"
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([episode.href])
 
 
 def search(phrase):
@@ -109,7 +134,7 @@ def cycle_over_search_page(soup):
     a = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
     for el in a:
         serie = BBCShow()
-        serie.href = base_url + el.get("href")  # TODO There should be a method for this
+        serie.href = base_url + el.get("href")
         el_info = el.get("aria-label")
         if "Description: Not available." in el_info:
             continue
@@ -131,17 +156,20 @@ def results(items):
     return items[c - 1]
 
 
+# TODO Don't quit program if last ep is played
 if __name__ == "__main__":
-    if False:
-        print("1) Index\n2) Search")
-        c = int(input("> "))
-        if c == 1:
-            items = listing_index(iplayer_url)
-        elif c == 2:
-            items = search(str(input("Enter search query: ")))
-    if True:
-        items = search("doctor who")
+    autoplay = True
+    print("1) Index\n2) Search")
+    c = int(input("> "))
+    if c == 1:
+        items = listing_index(iplayer_url)
+    elif c == 2:
+        items = search(str(input("Enter search query: ")))
     chosen_serie = results(items)
     episodes = listing_serie(chosen_serie)
     chosen_episode = results(episodes)
-    play(chosen_episode)
+    if autoplay:
+        play(chosen_episode, episodes)
+    else:
+        play(chosen_episode, False)
+    #download(chosen_episode) ¤ TODO
