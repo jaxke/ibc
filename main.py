@@ -317,6 +317,9 @@ if __name__ == "__main__":
         else:
             print("Invalid option")
             continue
+        if len(chosen_serie) > 1:
+            print("Only one series can be chosen at once!")
+            continue
         episodes = listing_serie(chosen_serie)
         chosen_episode = results(episodes)
         if not chosen_episode:
