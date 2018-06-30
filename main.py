@@ -5,6 +5,8 @@ from pdb import set_trace as st
 import requests
 import sys
 
+# TODO geo-bypass in ytdl?
+
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
                 Chrome/42.0.2311.90 Safari/537.36'}
 iplayer_url = "https://www.bbc.co.uk/iplayer"
@@ -112,12 +114,22 @@ def get_eps_in_page(soup):
     except AttributeError:
         return    # This is a one-part show
 
+def extract_link(href):
+    r = requests.get(url=href, headers=hdr)
+    soup = BeautifulSoup(r.content, "html.parser")
+    links = soup.find_all("link")
+    for link in links:
+        if link.get("rel", None):
+            if link.get("rel")[0] == "canonical":
+                return link.get("href")
 
 def play(episode, all_eps):
     # Is a one part "show", maybe a documentary etc... OR autoplay is disabled
     if isinstance(episode, BBCShow) or not all_eps:
+        real_link = extract_link(episode.href)
         print("PLAYING " + episode.title + ". Press Q to STOP playback.")
-        subprocess.call(["mpv", episode.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        #subprocess.call(["mpv", episode.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.call(["mpv", episode.href])
     else:
         ep_index = all_eps.index(episode)
         for i in range(ep_index, len(all_eps)):
@@ -205,6 +217,8 @@ def a_z(letter):
 
 # TODO Fix download() and make it usable
 if __name__ == "__main__":
+    print(extract_link('https://www.bbc.co.uk/iplayer/brand/p067bnvw'))
+    sys.exit(0)
     index = iplayer_url
 
     autoplay = True
