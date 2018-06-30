@@ -181,18 +181,40 @@ def results(items):
         return False
 
 
+def a_z(letter):
+    series = []
+    az_url = "https://www.bbc.co.uk/iplayer/a-z/" + letter
+    r = requests.get(url=az_url, headers=hdr)
+    soup = BeautifulSoup(r.content, "html.parser")
+    series = soup.find_all("a", {"class": "tleo"})
+    for item in series:
+        iplayer_item = BBCShow()
+        try:
+            iplayer_item.title = item.find("span", {"class": "title"}).text
+        except AttributeError:
+            break   # TODO WTF is this bug?
+        iplayer_item.href = base_url + item.get("href")
+        series.append(iplayer_item)
+    for i, serie in enumerate(series):
+        print("{0}: {1}".format(i + 1, serie.title))
+    c = int(input("> "))
+    return series[c - 1]
+
+
 # TODO Fix download() and make it usable
 if __name__ == "__main__":
     index = iplayer_url
 
     autoplay = True
     while True:
-        print("1) Index\n2) Search\n3) View categories\nQ) Quit")
+        print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit")
         c = input("> ")
         if c == "1":
             items = listing_index(index)
+            chosen_serie = results(items)
         elif c == "2":
             items = search(str(input("Enter search query: ")))
+            chosen_serie = results(items)
         elif c == "3":
             cats = get_categories()
             for i, cat in enumerate(cats):
@@ -200,9 +222,12 @@ if __name__ == "__main__":
             c = int(input("> "))
             index = cats[c].href
             items = listing_index(index)
+            chosen_serie = results(items)
+        elif c == "4":
+            letter = input("[A...Z]: ")
+            chosen_serie = a_z(letter.lower())
         elif c.lower() == "q":
             break
-        chosen_serie = results(items)
         if not chosen_serie:
             continue
         serie_view = chosen_serie
