@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import youtube_dl
 from pdb import set_trace as st
 import requests
+import sys
 
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
                 Chrome/42.0.2311.90 Safari/537.36'}
@@ -25,6 +26,26 @@ class BBCEpisode:
     episode_number = 0
     duration = ""
 
+class BBCCategory:
+    href = ""
+    title = ""
+
+
+# tvip-cats tvip-nav-clearfix
+def get_categories():
+    categories = []
+    r = requests.get(url=iplayer_url, headers=hdr)
+    soup = BeautifulSoup(r.content, "html.parser")
+    u_lists = soup.find_all("ul", {"class": ["tvip-cats", "tvip-nav-clearfix"]})
+    for ul in u_lists:
+        cats_in_ul = ul.find_all("a", {"class": ["typo", "typo--canary", "stat"]})
+        for cat in cats_in_ul:
+            c = BBCCategory()
+            c.href = base_url + cat.get("href")
+            c.title = cat.contents[0]
+            categories.append(c)
+    return categories
+
 
 def listing_index(index_url):
     items = []
@@ -46,7 +67,6 @@ def listing_index(index_url):
     return items
 
 
-# lnk pagination__direction pagination__direction--next pagination__direction--large
 # TODO Does not work for a serie with no View all button
 def listing_serie(parent_serie):
     episodes = []
@@ -85,6 +105,7 @@ def get_eps_in_page(soup):
             ep.href = base_url + content.get("href")
             #ep.show_name = parent_serie.title
             ep.title = el_info.split("Description")[0]
+            ep.duration = el_info.split("Duration: ")[1].split(".")[0]
             episodes.append(ep)
         # return episodes[::-1]
         return episodes
@@ -92,17 +113,12 @@ def get_eps_in_page(soup):
         return    # This is a one-part show
 
 
-# TODO autoplay next?
 def play(episode, all_eps):
-    if isinstance(episode, BBCShow):  # Is a one part "show", maybe a documentary etc...
+    # Is a one part "show", maybe a documentary etc... OR autoplay is disabled
+    if isinstance(episode, BBCShow) or not all_eps:
         subprocess.call(["mpv", episode.href])
     else:
         ep_index = all_eps.index(episode)
-        for i in range(len(all_eps)):
-            if all == episode:
-                subprocess.call(["mpv", episode.href])
-                if str(input("Watch next episode Y/N: ")).lower() == "y":
-                    continue
         for i in range(ep_index, len(all_eps)):
             subprocess.call(["mpv", all_eps[i].href])
             if i != len(all_eps) - 1:
@@ -112,6 +128,7 @@ def play(episode, all_eps):
                     return
 
 
+# TODO Not working
 def download(episode):
     ydl_opts = {"hls_prefer_native": True}
     ydl_opts['outtmpl'] = "%(title)s.%(ext)s"
@@ -119,6 +136,7 @@ def download(episode):
         ydl.download([episode.href])
 
 
+# Only finds items in first page, rest are usually irrelevant(and dev is lazy)
 def search(phrase):
     search_url = "https://www.bbc.co.uk/iplayer/search?q=" + phrase.replace(" ", "+")
     found_items = []
@@ -126,18 +144,17 @@ def search(phrase):
     soup = BeautifulSoup(r.content, "html.parser")
     found_items += cycle_over_search_page(soup)
     return found_items
-    # TODO only one search page is used now because the rest seems rubbish and would take time to cycle over each page
 
 
 def cycle_over_search_page(soup):
     found_items = []
     a = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
     for el in a:
+        el_info = el.get("aria-label")
+        if "Description: Not available." in el_info:    # Is upcoming == not playable ATM
+            continue
         serie = BBCShow()
         serie.href = base_url + el.get("href")
-        el_info = el.get("aria-label")
-        if "Description: Not available." in el_info:
-            continue
         serie.title = el_info.split("Description")[0]
         serie.category = el_info.split("Description")[1].split(".")[0][2:]
         serie.additional = el_info.split("Description")[1].split(".")[1][1:]
@@ -151,25 +168,51 @@ def results(items):
     if isinstance(items, BBCShow):
         return items
     for i, ser in enumerate(items):
-        print("{0}: {1}".format(i + 1, ser.title))
-    c = int(input("> "))
-    return items[c - 1]
-
-
-# TODO Don't quit program if last ep is played
-if __name__ == "__main__":
-    autoplay = True
-    print("1) Index\n2) Search")
-    c = int(input("> "))
-    if c == 1:
-        items = listing_index(iplayer_url)
-    elif c == 2:
-        items = search(str(input("Enter search query: ")))
-    chosen_serie = results(items)
-    episodes = listing_serie(chosen_serie)
-    chosen_episode = results(episodes)
-    if autoplay:
-        play(chosen_episode, episodes)
+        print("{0}: {1}({2})".format(i + 1, ser.title, ser.duration))
+    c = input("> ")
+    if c == "c":
+        return False
+    elif c.isnumeric():
+        return items[int(c) - 1]
+    elif c == "q":
+        sys.exit(0)
     else:
-        play(chosen_episode, False)
-    #download(chosen_episode) ¤ TODO
+        print("\nDon't break my program!")
+        return False
+
+
+# TODO Fix download() and make it usable
+if __name__ == "__main__":
+    index = iplayer_url
+
+    autoplay = True
+    while True:
+        print("1) Index\n2) Search\n3) View categories\nQ) Quit")
+        c = input("> ")
+        if c == "1":
+            items = listing_index(index)
+        elif c == "2":
+            items = search(str(input("Enter search query: ")))
+        elif c == "3":
+            cats = get_categories()
+            for i, cat in enumerate(cats):
+                print("{0}: {1}".format(i + 1, cat.title))
+            c = int(input("> "))
+            index = cats[c].href
+            items = listing_index(index)
+        elif c.lower() == "q":
+            break
+        chosen_serie = results(items)
+        if not chosen_serie:
+            continue
+        serie_view = chosen_serie
+        episodes = listing_serie(chosen_serie)
+        eps_view = chosen_serie
+        chosen_episode = results(episodes)
+        if not chosen_episode:
+            continue
+
+        if autoplay:
+            play(chosen_episode, episodes)
+        else:
+            play(chosen_episode, False)
