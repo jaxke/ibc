@@ -32,22 +32,21 @@ def listing_index(index_url):
     soup = BeautifulSoup(r.content, "html.parser")
     el = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
     for e in el: # TODO CLEAN THE SHIT OUT OF THIS
+        if e.get("data-object-type") == "editorial-promo":
+            continue
         el_info = e.get("aria-label")
-        el_title = el_info.split("Description")[0][:-2]
-        el_category = el_info.split("Description")[1].split(".")[0][2:]
-        el_additional = el_info.split("Description")[1].split(".")[1][1:]
-        el_duration = el_info.split("Duration")[1].split(".")[0][2:]
         el_href = e.get("href")
         iplayer_item = BBCShow()
         iplayer_item.href = base_url + el_href
-        iplayer_item.title = el_title
-        iplayer_item.category = el_category
-        iplayer_item.additional = el_additional
-        iplayer_item.duration = el_duration
+        iplayer_item.title = el_info.split("Description")[0][:-2]
+        iplayer_item.category = el_info.split("Description")[1].split(".")[0][2:]
+        iplayer_item.additional = el_info.split("Description")[1].split(".")[1][1:]
+        iplayer_item.duration = el_info.split("Duration")[1].split(".")[0][2:]
         items.append(iplayer_item)
     return items
 
 
+# lnk pagination__direction pagination__direction--next pagination__direction--large
 # TODO Does not work for a serie with no View all button
 # TODO Does not find anything beyond first page
 def listing_serie(parent_serie):
@@ -60,18 +59,33 @@ def listing_serie(parent_serie):
     except AttributeError:
         pass    # This is not a serie or there is no View all button
     soup = BeautifulSoup(r.content, "html.parser")
+    eps_found = get_eps_in_page(soup)
+    if eps_found:
+        episodes += get_eps_in_page(soup)
+    else:   # if that method returns False, it didn't find any episodes
+        return parent_serie
+    for i in range(6):
+        next_page = soup.find("a", {"class": ["lnk pagination__direction", "pagination__direction--next", "pagination__direction--large"]}).get("href")
+        r_next = requests.get(url=r.url + next_page, headers=hdr)
+        next_soup = BeautifulSoup(r_next.content, "html.parser")
+        episodes += get_eps_in_page(next_soup)
+    return episodes
+
+
+def get_eps_in_page(soup):
+    episodes = []
     try:
         div_content = soup.find("div", {"class": ["grid", "list__grid"]}).find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]}) # grid list__grid
         for content in div_content:
             el_info = content.get("aria-label")
             ep = BBCEpisode()
             ep.href = base_url + content.get("href")
-            ep.show_name = parent_serie.title
+            #ep.show_name = parent_serie.title
             ep.title = el_info.split("Description")[0]
             episodes.append(ep)
         return episodes[::-1]
     except AttributeError:
-        return parent_serie    # This is a one-part show
+        return    # This is a one-part show
 
 
 def play(episode):
@@ -118,13 +132,15 @@ def results(items):
 
 
 if __name__ == "__main__":
-    print("1) Index\n2) Search")
-    c = int(input("> "))
-    if c == 1:
-        items = listing_index(iplayer_url)
-    elif c == 2:
-        items = search(str(input("Enter search query: ")))
-
+    if False:
+        print("1) Index\n2) Search")
+        c = int(input("> "))
+        if c == 1:
+            items = listing_index(iplayer_url)
+        elif c == 2:
+            items = search(str(input("Enter search query: ")))
+    if True:
+        items = search("doctor who")
     chosen_serie = results(items)
     episodes = listing_serie(chosen_serie)
     chosen_episode = results(episodes)
