@@ -116,11 +116,13 @@ def get_eps_in_page(soup):
 def play(episode, all_eps):
     # Is a one part "show", maybe a documentary etc... OR autoplay is disabled
     if isinstance(episode, BBCShow) or not all_eps:
-        subprocess.call(["mpv", episode.href])
+        print("PLAYING " + episode.title + ". Press Q to STOP playback.")
+        subprocess.call(["mpv", episode.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         ep_index = all_eps.index(episode)
         for i in range(ep_index, len(all_eps)):
-            subprocess.call(["mpv", all_eps[i].href])
+            print("PLAYING " + all_eps[i].title + ". Press Q to STOP playback.")
+            subprocess.call(["mpv", all_eps[i].href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if i != len(all_eps) - 1:
                 if str(input("Watch next episode Y/N: ")).lower() == "y":
                     continue
@@ -186,19 +188,19 @@ def a_z(letter):
     az_url = "https://www.bbc.co.uk/iplayer/a-z/" + letter
     r = requests.get(url=az_url, headers=hdr)
     soup = BeautifulSoup(r.content, "html.parser")
-    series = soup.find_all("a", {"class": "tleo"})
-    for item in series:
+    items_found = soup.find_all("a", {"class": "tleo"})
+    for item in items_found:
         iplayer_item = BBCShow()
-        try:
-            iplayer_item.title = item.find("span", {"class": "title"}).text
-        except AttributeError:
-            break   # TODO WTF is this bug?
+        iplayer_item.title = item.find("span", {"class": "title"}).text
         iplayer_item.href = base_url + item.get("href")
         series.append(iplayer_item)
     for i, serie in enumerate(series):
         print("{0}: {1}".format(i + 1, serie.title))
-    c = int(input("> "))
-    return series[c - 1]
+    c = input("> ")
+    if c.isnumeric():
+        return series[int(c) - 1]
+    else:
+        return
 
 
 # TODO Fix download() and make it usable
