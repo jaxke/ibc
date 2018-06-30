@@ -39,11 +39,17 @@ aria-label holds important bits of info in iPlayer's HTML
 '''
 
 
+# Return the bs4 object that is used by nearly all of the functions
+def get_soup(url):
+    r = requests.get(url=url, headers=hdr)
+    soup = BeautifulSoup(r.content, "html.parser")
+    return soup
+
+
 # Lists all categories from the top menu
 def get_categories():
     categories = []
-    r = requests.get(url=iplayer_url, headers=hdr)
-    soup = BeautifulSoup(r.content, "html.parser")
+    soup = get_soup(iplayer_url)
     u_lists = soup.find_all("ul", {"class": ["tvip-cats", "tvip-nav-clearfix"]})
     for ul in u_lists:
         cats_in_ul = ul.find_all("a", {"class": ["typo", "typo--canary", "stat"]})
@@ -57,8 +63,7 @@ def get_categories():
 
 # Get "all" items from a given category(under "View all Comedy/drama A-Z")
 def get_cats_a_z(cats_href):
-    r = requests.get(url=cats_href, headers=hdr)
-    soup = BeautifulSoup(r.content, "html.parser")
+    soup = get_soup(cats_href)
     view_az = base_url + soup.find("a", {"class": ["button", "button--clickable"]}).get("href")
     return listing_index(view_az)
 
@@ -66,9 +71,12 @@ def get_cats_a_z(cats_href):
 # Lists any index page(home and links after a category). However not A-Z pages(see a_z())
 def listing_index(index_url):
     items = []
-    r = requests.get(url=index_url, headers=hdr)
-    soup = BeautifulSoup(r.content, "html.parser")
+    soup = get_soup(index_url)
+    it = 0
     while True:
+        if it > 20: # TODO Remove this
+            print("DEBUG: Iterator has reached 20, breaking")
+            break
         el = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
         for e in el:
             if e.get("data-object-type") == "editorial-promo":
@@ -90,6 +98,7 @@ def listing_index(index_url):
         else:
             r = requests.get(url=index_url + next_page.get("href"), headers=hdr)
             soup = BeautifulSoup(r.content, "html.parser")
+        it += 1
     return items
 
 
@@ -97,8 +106,7 @@ def listing_index(index_url):
 # TODO Does not work for a serie with no View all button
 def listing_serie(parent_serie):
     episodes = []
-    r = requests.get(url=parent_serie.href, headers=hdr)
-    soup = BeautifulSoup(r.content, "html.parser")
+    soup = get_soup(parent_serie.href)
     try:
         view_all = soup.find("a", {"class": ["button", "section__header__cta", "button--clickable"]}).get("href")
         r = requests.get(url=base_url + view_all, headers=hdr)
@@ -133,7 +141,6 @@ def get_eps_in_page(soup):
             el_info = content.get("aria-label")
             ep = BBCEpisode()
             ep.href = base_url + content.get("href")
-            #ep.show_name = parent_serie.title
             ep.title = el_info.split("Description")[0]
             ep.duration = el_info.split("Duration: ")[1].split(".")[0]
             episodes.append(ep)
@@ -146,6 +153,7 @@ def get_eps_in_page(soup):
 # One-episode shows have this special type of link that has to be dug from the source once again(the href in its parameter is not a video link)
 # <link rel="canonical" href="..." > We want this href.
 def extract_link(href):
+    soup = get_soup(href)
     r = requests.get(url=href, headers=hdr)
     soup = BeautifulSoup(r.content, "html.parser")
     links = soup.find_all("link")
@@ -187,6 +195,7 @@ def download(episode):
 def search(phrase):
     search_url = "https://www.bbc.co.uk/iplayer/search?q=" + phrase.replace(" ", "+")
     found_items = []
+    soup = get_soup(search_url)
     r = requests.get(url=search_url, headers=hdr)
     soup = BeautifulSoup(r.content, "html.parser")
     found_items += cycle_over_search_page(soup)
@@ -234,6 +243,7 @@ def results(items):
 def a_z(letter):
     series = []
     az_url = "https://www.bbc.co.uk/iplayer/a-z/" + letter
+    soup = get_soup(az_url)
     r = requests.get(url=az_url, headers=hdr)
     soup = BeautifulSoup(r.content, "html.parser")
     items_found = soup.find_all("a", {"class": "tleo"})
@@ -251,13 +261,9 @@ def a_z(letter):
         return
 
 
-
-
 # TODO Fix download() and make it usable
 if __name__ == "__main__":
-
     index = iplayer_url
-
     autoplay = True
     while True:
         print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit")
@@ -281,8 +287,11 @@ if __name__ == "__main__":
             chosen_serie = a_z(letter.lower())
         elif c.lower() == "q":
             break
+        else:
+            print("Invalid option")
+            continue
         if not chosen_serie:
-            print("come on mate")
+            print("")
             continue
         serie_view = chosen_serie
         episodes = listing_serie(chosen_serie)
