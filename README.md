@@ -9,8 +9,10 @@ Front end for BBC iPlayer
 * List by categories  
 
 ## Installation
-```git clone https://github.com/jaxke/ibc  
-python main.py```
+```
+git clone https://github.com/jaxke/ibc  
+python main.py
+```
 
 ## Requirements
 * mpv  
