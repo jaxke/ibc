@@ -17,6 +17,7 @@ base_url = "https://www.bbc.co.uk"
 conf_file = "conf.txt"
 watched_list = "watched.json"
 g_watched = None  # This will be filled out if processed to cache it, not generated automatically.
+favourites_list = "favourites.json"
 
 
 class Colours:
@@ -185,7 +186,6 @@ def get_eps_in_page(soup, parent_programme):
             ep.additional = el_info.split("Description: ")[1].split(" Duration:")[0]
             ep.channel = channel
             ep.parent_programme.channel = channel
-            # /iplayer/episode/b0b8gf2b/eastenders-29062018-part-2
             ep.pid = content.get("href").split("/")[3]
             episodes.append(ep)
         return episodes
@@ -303,13 +303,13 @@ def results(items, item_type):
         #print(items.title.upper() + ": " + items.additional)
         return items
     else:  # Play first EPISODE if only one exists
-        if len(items) == 1:
+        if len(items) == 1 and item_type == "eps":
             return items[0]
     for i, ser in enumerate(items):
         watched = ""
         if item_type == "eps":
             watched_list = get_watched()
-            if ser.pid in watched_list:
+            if ser.pid in (item.pid for item in watched_list):
                 watched = Colours.GREEN + "[X]" + Colours.END
         if ser.duration:
             print("{0}: {1}({2})".format(i + 1, Colours.RED + ser.title + Colours.END,
@@ -321,6 +321,10 @@ def results(items, item_type):
     if c == "c":
         return
     ind = c.split(" ")
+    if item_type == "programme" and "f" in ind[0]:
+        push_to_fav_index = int(ind[0].replace("f", "")) - 1
+        add_to_favourites(items[push_to_fav_index])
+        return
     # If desc gets defined as True, user has chosen to programme descriptions for items and we need to return early(they
     # might want multiple descriptions at once so can't return from for loop)
     desc = False
@@ -364,47 +368,64 @@ def download(episodes):
             ydl.download([episode.href])
 
 
+def dict_from_json(json_file, type):
+    obj_list = []
+    open(json_file, "a").close()  # Make sure file exists before attempting to open it
+    with open(json_file, "r") as json_r:
+        try:
+            json_contents = json.load(json_r)
+        except json.decoder.JSONDecodeError:  # Bad data
+            json_contents = {}
+        for item in json_contents:
+            try:
+                dict_el = json_contents[item]
+                if type == "eps":
+                    obj = BBCEpisode()
+                    obj.href = dict_el['href']
+                    obj.pid = item
+                    obj.title = dict_el['title']
+                    obj.duration = dict_el['duration']
+                    obj.additional = dict_el['additional']
+                    obj.channel = dict_el['channel']
+                    par_prog = BBCProgramme()
+                    par_prog.title = dict_el['programme']
+                    obj.parent_programme = par_prog
+                    obj_list.append(obj)
+                else:
+                    obj = BBCProgramme()
+                    obj.title = dict_el['title']
+                    obj.href = dict_el['href']
+                    obj.category = dict_el['category']
+                    obj.additional = dict_el['additional']
+                    obj.duration = dict_el['duration']
+                    obj.channel = dict_el['channel']
+                    obj_list.append(obj)
+            except KeyError:
+                continue
+    return obj_list
+
+
+def get_watched():
+    watched_objs = dict_from_json(watched_list, "eps")
+    global g_watched
+    g_watched = watched_objs
+    return watched_objs
+
+
 def mark_watched(episode):
     watched = get_watched()
     now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     # Use pids as the primary keys for this JSON
     new_entry = {episode.pid: {"title": episode.title, "duration": episode.duration, "additional": episode.additional,
-                               "channel": episode.channel, "watched_at": now, "programme": episode.parent_programme.title}}
+                               "channel": episode.channel, "watched_at": now,
+                               "programme": episode.parent_programme.title, "href": episode.href}}
     merged = dict(watched, **new_entry)
     #watched.append(new_entry)
     with open(watched_list, "w") as dump_json:
         json.dump(merged, dump_json, indent=4)  # using indent will make the json file look better(everything's not on one line)
 
 
-def get_watched():
-    watched_objs = []
-    open(watched_list, "a").close()  # Make sure file exists before attempting to open it
-    with open(watched_list, "r") as watched_r:
-        try:
-            watched = json.load(watched_r)
-        except json.decoder.JSONDecodeError:  # Bad data
-            watched = {}
-    for item in watched:
-        try:
-            episode = BBCEpisode()
-            dict_el = watched[item]
-            episode.title = dict_el['title']
-            episode.duration = dict_el['duration']
-            episode.additional = dict_el['additional']
-            episode.channel = dict_el['channel']
-            par_prog = BBCProgramme()
-            par_prog.title = dict_el['programme']
-            episode.parent_programme = par_prog  # Note: only title for this object!! No other attributes are needed here
-            watched_objs.append(episode)
-        # It is way too laborious to resolve KeyErrors here as the result is not THAT important
-        except KeyError:
-            continue
-
-    global g_watched
-    g_watched = watched_objs
-    return watched
-
-
+# Feature disabled
 def select_from_watched():
     global g_watched
     if g_watched is None:
@@ -416,6 +437,21 @@ def select_from_watched():
         return
 
 
+def get_favourites():
+    return dict_from_json(favourites_list, "series")
+
+
+def add_to_favourites(programme):
+    favourites = get_favourites()
+    new_entry = {programme.title: {"title": programme.title, "category": programme.category, "additional": programme.additional,
+                                   "duration": programme.duration, "channel": programme.channel, "href": programme.href}}
+
+    merged = dict(favourites, **new_entry)
+    with open(favourites_list, "w") as dump_json:
+        json.dump(merged, dump_json, indent=4)
+    print(programme.title + " added to favourites.")
+
+
 if __name__ == "__main__":
     TEST = True
     conf = get_config()
@@ -425,10 +461,11 @@ if __name__ == "__main__":
     while True:
         chosen_serie = None
         # os.system('clear')
-        print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit (C cancels selection and returns this menu)\n"
+        print("1) Index\n2) Search\n3) View categories\n4) A-Z\n5) Favourites\nQ) Quit (C cancels selection and returns this menu)\n"
               "0) Change mode(currently " + mode + ")")
         c = input("> ")
         if c == "0":
+            os.system('clear')
             if mode == "PLAY":
                 mode = "DOWNLOAD"
                 set_config("mode", "DOWNLOAD")
@@ -458,11 +495,12 @@ if __name__ == "__main__":
             items = a_z(letter.lower())
             chosen_serie = results(items, "programme")
         elif c == "5":
-            # TODO This function is broken(the general arch of this program isn't compatible with it)
-            # Probably will not be fixed because it is not very useful
-            continue
-            chosen_episodes = select_from_watched()
-            episodes = chosen_episodes
+            favs = get_favourites()
+            if len(favs) != 0:
+                chosen_serie = results(favs, "programme")
+            else:
+                os.system('clear')
+                print(Colours.RED + "You have not added anything to favourites!" + Colours.END)
         elif c.lower() == "q":
             break
         elif c.lower() == "c":
@@ -470,7 +508,7 @@ if __name__ == "__main__":
         else:
             print("Invalid option")
             continue
-        if not chosen_serie and not chosen_episodes:  # User cancelled from results()
+        if not chosen_serie:  # User cancelled from results()
             continue
         episodes = listing_serie(chosen_serie)
         chosen_episodes = results(episodes, "eps")
@@ -483,4 +521,3 @@ if __name__ == "__main__":
                 play(chosen_episodes, False)
         else:
             download(chosen_episodes)
-
