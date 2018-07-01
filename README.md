@@ -8,12 +8,6 @@ Front end for BBC iPlayer
 * Search using keywords  
 * List by categories  
 
-## Installation
-```  
-git clone https://github.com/jaxke/ibc  
-python main.py  
-```
-
 ## Requirements
 * mpv  
 * youtube-dl  
