@@ -378,4 +378,3 @@ if __name__ == "__main__":
                 play(chosen_episodes, False)
         else:
             download(chosen_episodes)
-
