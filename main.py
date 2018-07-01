@@ -6,6 +6,8 @@ import requests
 import sys
 import os
 import configparser
+import json
+import time
 
 
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
@@ -13,6 +15,9 @@ hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KH
 iplayer_url = "https://www.bbc.co.uk/iplayer"
 base_url = "https://www.bbc.co.uk"
 conf_file = "conf.txt"
+watched_list = "watched.json"
+g_watched = None  # This will be filled out if processed to cache it, not generated automatically.
+
 
 class Colours:
     BLUE = '\033[94m'
@@ -38,6 +43,7 @@ class BBCEpisode:
     duration = ""
     additional = ""
     channel = ""
+    pid = ""
 
 
 class BBCCategory:
@@ -173,12 +179,14 @@ def get_eps_in_page(soup, parent_programme):
             el_info = content.get("aria-label")
             ep = BBCEpisode()
             ep.href = base_url + content.get("href")
-            ep.title = el_info.split("Description")[0]
+            ep.title = el_info.split(" Description")[0]
             ep.duration = el_info.split("Duration: ")[1].split(".")[0]
             ep.parent_programme = parent_programme
             ep.additional = el_info.split("Description: ")[1].split(" Duration:")[0]
             ep.channel = channel
             ep.parent_programme.channel = channel
+            # /iplayer/episode/b0b8gf2b/eastenders-29062018-part-2
+            ep.pid = content.get("href").split("/")[3]
             episodes.append(ep)
         return episodes
     except AttributeError:
@@ -200,12 +208,13 @@ def extract_link(href):
 
 
 def play(episodes, all_eps):
-    DEBUG = False
+    DEBUG = True
     # Is a one part "programme", maybe a documentary etc... OR autoplay is disabled
     if isinstance(episodes, BBCProgramme) or not all_eps:
         real_link = extract_link(episodes.href)
         play_msg(episodes)
         subprocess.call(["mpv", real_link], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
     else:
         # If more than one episode was selected, play them back to back
         if len(episodes) > 1:
@@ -231,6 +240,7 @@ def play(episodes, all_eps):
 
 
 def play_msg(episode):
+    mark_watched(episode)
     try:
         print(
             "PLAYING " + Colours.GREEN + episode.parent_programme.upper() + Colours.END + " - " + Colours.BLUE + episode.title.upper() +
@@ -296,11 +306,17 @@ def results(items, item_type):
         if len(items) == 1:
             return items[0]
     for i, ser in enumerate(items):
+        watched = ""
+        if item_type == "eps":
+            watched_list = get_watched()
+            if ser.pid in watched_list:
+                watched = Colours.GREEN + "[X]" + Colours.END
         if ser.duration:
             print("{0}: {1}({2})".format(i + 1, Colours.RED + ser.title + Colours.END,
-                                         Colours.BLUE + ser.duration + Colours.END))
+                                         Colours.BLUE + ser.duration + Colours.END), end="")
         else:  # If series are from A-Z, there's no clean way to find out the duration
-            print("{0}: {1}".format(i + 1, Colours.RED + ser.title + Colours.END))
+            print("{0}: {1}".format(i + 1, Colours.RED + ser.title + Colours.END), end="")
+        print(watched)  # Prints "[X]\n" if watched or "\n" if not
     c = input("> ")
     if c == "c":
         return
@@ -348,12 +364,66 @@ def download(episodes):
             ydl.download([episode.href])
 
 
+def mark_watched(episode):
+    watched = get_watched()
+    now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    # Use pids as the primary keys for this JSON
+    new_entry = {episode.pid: {"title": episode.title, "duration": episode.duration, "additional": episode.additional,
+                               "channel": episode.channel, "watched_at": now, "programme": episode.parent_programme.title}}
+    merged = dict(watched, **new_entry)
+    #watched.append(new_entry)
+    with open(watched_list, "w") as dump_json:
+        json.dump(merged, dump_json, indent=4)  # using indent will make the json file look better(everything's not on one line)
+
+
+def get_watched():
+    watched_objs = []
+    open(watched_list, "a").close()  # Make sure file exists before attempting to open it
+    with open(watched_list, "r") as watched_r:
+        try:
+            watched = json.load(watched_r)
+        except json.decoder.JSONDecodeError:  # Bad data
+            watched = {}
+    for item in watched:
+        try:
+            episode = BBCEpisode()
+            dict_el = watched[item]
+            episode.title = dict_el['title']
+            episode.duration = dict_el['duration']
+            episode.additional = dict_el['additional']
+            episode.channel = dict_el['channel']
+            par_prog = BBCProgramme()
+            par_prog.title = dict_el['programme']
+            episode.parent_programme = par_prog  # Note: only title for this object!! No other attributes are needed here
+            watched_objs.append(episode)
+        # It is way too laborious to resolve KeyErrors here as the result is not THAT important
+        except KeyError:
+            continue
+
+    global g_watched
+    g_watched = watched_objs
+    return watched
+
+
+def select_from_watched():
+    global g_watched
+    if g_watched is None:
+        get_watched()   # Creates global var g_watched
+    if g_watched:       # Test if anything was added in the block above
+        return results(g_watched, "eps")
+    else:
+        print("You have not watched anything yet!")
+        return
+
+
 if __name__ == "__main__":
+    TEST = True
     conf = get_config()
     index = iplayer_url
     autoplay = conf.autoplay
     mode = conf.mode
     while True:
+        chosen_serie = None
         # os.system('clear')
         print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit (C cancels selection and returns this menu)\n"
               "0) Change mode(currently " + mode + ")")
@@ -387,6 +457,12 @@ if __name__ == "__main__":
             letter = input("[A...Z]: ")
             items = a_z(letter.lower())
             chosen_serie = results(items, "programme")
+        elif c == "5":
+            # TODO This function is broken(the general arch of this program isn't compatible with it)
+            # Probably will not be fixed because it is not very useful
+            continue
+            chosen_episodes = select_from_watched()
+            episodes = chosen_episodes
         elif c.lower() == "q":
             break
         elif c.lower() == "c":
@@ -394,7 +470,7 @@ if __name__ == "__main__":
         else:
             print("Invalid option")
             continue
-        if not chosen_serie:  # User cancelled from results()
+        if not chosen_serie and not chosen_episodes:  # User cancelled from results()
             continue
         episodes = listing_serie(chosen_serie)
         chosen_episodes = results(episodes, "eps")
