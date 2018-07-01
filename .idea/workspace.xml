@@ -2,9 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="a4fd2e29-baca-4ea6-9db1-c8a38f04fb43" name="Default" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py.future" beforeDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
@@ -18,8 +16,8 @@
       <file leaf-file-name="main.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/main.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="4290">
-              <caret line="286" column="71" lean-forward="true" selection-start-line="286" selection-start-column="71" selection-end-line="286" selection-end-column="71" />
+            <state relative-caret-position="-2957">
+              <caret line="163" column="55" lean-forward="true" selection-start-line="163" selection-start-column="55" selection-end-line="163" selection-end-column="55" />
               <folding>
                 <element signature="e#0#17#0" expanded="true" />
               </folding>
@@ -36,7 +34,16 @@
       <find>bbcepiso</find>
       <find>listin</find>
       <find>listing_serie(</find>
+      <find>BBCShow</find>
+      <find>show</find>
+      <find>programme_name</find>
+      <find>parent_serie</find>
     </findStrings>
+    <replaceStrings>
+      <replace>BBCProgramme</replace>
+      <replace>programme</replace>
+      <replace>parent_programme</replace>
+    </replaceStrings>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -162,7 +169,7 @@
           </properties>
         </breakpoint>
       </default-breakpoints>
-      <option name="time" value="66" />
+      <option name="time" value="71" />
     </breakpoint-manager>
   </component>
   <component name="debuggerHistoryManager">
@@ -268,8 +275,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/main.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="4290">
-          <caret line="286" column="71" lean-forward="true" selection-start-line="286" selection-start-column="71" selection-end-line="286" selection-end-column="71" />
+        <state relative-caret-position="-2957">
+          <caret line="163" column="55" lean-forward="true" selection-start-line="163" selection-start-column="55" selection-end-line="163" selection-end-column="55" />
           <folding>
             <element signature="e#0#17#0" expanded="true" />
           </folding>

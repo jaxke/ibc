@@ -6,7 +6,6 @@ import requests
 import sys
 import os
 
-# TODO Episode name needs cleaning(leftover spaces and stops)
 
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
                 Chrome/42.0.2311.90 Safari/537.36'}
@@ -21,32 +20,28 @@ class Colours:
     END = '\033[0m'
 
 
-class BBCShow:
+class BBCProgramme:
     href = ""
     title = ""
     category = ""
     additional = ""
     duration = ""
+    channel = ""
 
 
 class BBCEpisode:
     href = ""
-    show_name = ""
+    parent_programme = None  # BBCProgramme
     title = ""
     episode_number = 0
     duration = ""
     additional = ""
+    channel = ""
 
 
 class BBCCategory:
     href = ""
     title = ""
-
-
-''' 
-Dev notes:
-aria-label holds important bits of info in iPlayer's HTML
-'''
 
 
 # Return the bs4 object that is used by nearly all of the functions
@@ -89,7 +84,7 @@ def listing_index(index_url):
                 continue
             el_info = e.get("aria-label")
             el_href = e.get("href")
-            iplayer_item = BBCShow()
+            iplayer_item = BBCProgramme()
             iplayer_item.href = base_url + el_href
             iplayer_item.title = el_info.split("Description")[0][:-2]
             iplayer_item.category = el_info.split("Description")[1].split(".")[0][2:]
@@ -98,7 +93,7 @@ def listing_index(index_url):
             items.append(iplayer_item)
         # Suck data from every page
         next_page = soup.find("a", {"class": ["pagination__direction--next"]})
-        if next_page is None or 'lnk--disabled' in next_page.attrs['class']:    # Last page
+        if next_page is None or 'lnk--disabled' in next_page.attrs['class']:  # Last page
             break
         else:
             r = requests.get(url=index_url + next_page.get("href"), headers=hdr)
@@ -107,21 +102,23 @@ def listing_index(index_url):
 
 
 # Once a serie is chosen, this will gather all episodes from it
-def listing_serie(parent_serie):
+# Parameter = BBCProgramme
+# Returns: list of BBCEpisode objeccts under parent serie.
+def listing_serie(parent_programme):
     episodes = []
-    soup = get_soup(parent_serie[0].href)
+    soup = get_soup(parent_programme.href)
     try:
         view_all = soup.find("a", {"class": ["button", "section__header__cta", "button--clickable"]}).get("href")
         r = requests.get(url=base_url + view_all, headers=hdr)
     except AttributeError:
-        return parent_serie    # This is not a serie or there is no View all button
+        return parent_programme  # This is not a serie or there is no View all button
     soup = BeautifulSoup(r.content, "html.parser")
-    eps_found = get_eps_in_page(soup)
+    eps_found = get_eps_in_page(soup, parent_programme)
     if eps_found:
-        episodes += get_eps_in_page(soup)
-    else:   # if that method returns False, it didn't find any episodes
-        return parent_serie
-    # Shows are distributed within pages(if there are more than x episodes), this will loop through each page and collect episodes from them
+        episodes += get_eps_in_page(soup, parent_programme)
+    else:  # if that method returns False, it didn't find any episodes
+        return parent_programme
+    # programmes are distributed within pages(if there are more than x episodes), this will loop through each page and collect episodes from them
     while True:
         try:
             # This is the link that the "next" button refers to.
@@ -135,31 +132,35 @@ def listing_serie(parent_serie):
             break
         r_next = requests.get(url=r.url + next_page, headers=hdr)
         soup = BeautifulSoup(r_next.content, "html.parser")
-        episodes += get_eps_in_page(soup)
+        episodes += get_eps_in_page(soup, parent_programme)
     return episodes
 
 
 # This is used by listing_serie and will return episodes from a page
-def get_eps_in_page(soup):
+def get_eps_in_page(soup, parent_programme):
     episodes = []
-    show_name = soup.find("title").text.split("- ")[1]
+    channel = soup.find("img", {"class": "episodes-available__dog"}).get("alt")
     try:
-        div_content = soup.find("div", {"class": ["grid", "list__grid"]}).find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
+        div_content = soup.find("div", {"class": ["grid", "list__grid"]}).find_all("a", {
+            "class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
         for content in div_content:
             el_info = content.get("aria-label")
             ep = BBCEpisode()
             ep.href = base_url + content.get("href")
             ep.title = el_info.split("Description")[0]
             ep.duration = el_info.split("Duration: ")[1].split(".")[0]
-            ep.show_name = show_name
-            ep.additional =el_info.split("Description: ")[1].split(" Duration:")[0]
+            ep.parent_programme = parent_programme
+            ep.additional = el_info.split("Description: ")[1].split(" Duration:")[0]
+            ep.channel = channel
+            ep.parent_programme.channel = channel
             episodes.append(ep)
         return episodes
     except AttributeError:
-        return    # This is a one-part show
+        return  # This is a one-part programme
 
 
-# One-episode shows have a special type of link that has to be dug from the source once again(the href in its parameter is not a video link)
+# One-episode programmes have a special type of link that has to be dug from the source once again(the href in its
+# parameter is not a valid video link).
 # <link rel="canonical" href="..." > We want this href.
 def extract_link(href):
     soup = get_soup(href)
@@ -173,8 +174,9 @@ def extract_link(href):
 
 
 def play(episodes, all_eps):
-    # Is a one part "show", maybe a documentary etc... OR autoplay is disabled
-    if isinstance(episodes, BBCShow) or not all_eps:
+    DEBUG = True
+    # Is a one part "programme", maybe a documentary etc... OR autoplay is disabled
+    if isinstance(episodes, BBCProgramme) or not all_eps:
         real_link = extract_link(episodes.href)
         play_msg(episodes)
         subprocess.call(["mpv", real_link], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -183,8 +185,10 @@ def play(episodes, all_eps):
         if len(episodes) > 1:
             for ep in episodes:
                 play_msg(ep)
-                subprocess.call(["mpv", ep.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                # subprocess.call(["mpv", ep.href])
+                if DEBUG:
+                    subprocess.call(["mpv", ep.href])
+                else:
+                    subprocess.call(["mpv", ep.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if ep == episodes[-1]:  # If episode was not the last on the list, continue loop
                     return
         # ... Otherwise autoplay next episode
@@ -202,14 +206,16 @@ def play(episodes, all_eps):
 
 def play_msg(episode):
     try:
-        print("PLAYING " + Colours.GREEN + episode.show_name.upper() + Colours.END + " - " + Colours.BLUE + episode.title.upper() +
-              Colours.END + "Press Q to STOP playback.")
-    except AttributeError:  # If it's a one part show
-        print("PLAYING " + Colours.GREEN + episode.title.upper() + Colours.END + ". Press Q to STOP playback.".format(episode.title))
+        print(
+            "PLAYING " + Colours.GREEN + episode.parent_programme.upper() + Colours.END + " - " + Colours.BLUE + episode.title.upper() +
+            Colours.END + "Press Q to STOP playback.")
+    except AttributeError:  # If it's a one part programme
+        print("PLAYING " + Colours.GREEN + episode.title.upper() + Colours.END + ". Press Q to STOP playback.".format(
+            episode.title))
 
 
 # TODO Only finds items in first page, rest are usually irrelevant(and dev is lazy)
-# List all shows returned by a search
+# List all programmes returned by a search
 def search(phrase):
     search_url = "https://www.bbc.co.uk/iplayer/search?q=" + phrase.replace(" ", "+")
     found_items = []
@@ -226,9 +232,9 @@ def cycle_over_search_page(soup):
     a = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
     for el in a:
         el_info = el.get("aria-label")
-        if "Description: Not available." in el_info:    # Is upcoming == not playable ATM
+        if "Description: Not available." in el_info:  # Is upcoming == not playable ATM
             continue
-        serie = BBCShow()
+        serie = BBCProgramme()
         serie.href = base_url + el.get("href")
         serie.title = el_info.split("Description")[0]
         serie.category = el_info.split("Description")[1].split(".")[0][2:]
@@ -238,7 +244,7 @@ def cycle_over_search_page(soup):
     return found_items
 
 
-# Scaper for the A-Z page: list every show in iPlayer by letters.
+# Scaper for the A-Z page: list every programme in iPlayer by letters.
 def a_z(letter):
     series = []
     az_url = "https://www.bbc.co.uk/iplayer/a-z/" + letter
@@ -247,7 +253,7 @@ def a_z(letter):
     soup = BeautifulSoup(r.content, "html.parser")
     items_found = soup.find_all("a", {"class": "tleo"})
     for item in items_found:
-        iplayer_item = BBCShow()
+        iplayer_item = BBCProgramme()
         iplayer_item.title = item.find("span", {"class": "title"}).text
         iplayer_item.href = base_url + item.get("href")
         series.append(iplayer_item)
@@ -255,28 +261,30 @@ def a_z(letter):
 
 
 # This function formats and lists "results" and asks for the input. Merely there to reduce redundancy in __main__
-def results(items):
-    # "items" is a singular BBCShow and therefore there are no episodes of it, it's playable by itself(maybe 1-part documentary)
-    if isinstance(items, BBCShow):
+def results(items, item_type):
+    # "items" is a singular BBCProgramme and therefore there are no episodes of it, it's playable by itself(maybe 1-part documentary)
+    if isinstance(items, BBCProgramme):
+        #print(items.title.upper() + ": " + items.additional)
         return items
-    else:   # Play first EPISODE if only one exists
+    else:  # Play first EPISODE if only one exists
         if len(items) == 1:
             return items[0]
     for i, ser in enumerate(items):
         if ser.duration:
             print("{0}: {1}({2})".format(i + 1, Colours.RED + ser.title + Colours.END,
                                          Colours.BLUE + ser.duration + Colours.END))
-        else:   # If series are from A-Z, there's no clean way to find out the duration
+        else:  # If series are from A-Z, there's no clean way to find out the duration
             print("{0}: {1}".format(i + 1, Colours.RED + ser.title + Colours.END))
     c = input("> ")
     if c == "c":
         return
     ind = c.split(" ")
-    # If desc gets defined as True, user has chosen to show descriptions for items and we need to return early(they
+    # If desc gets defined as True, user has chosen to programme descriptions for items and we need to return early(they
     # might want multiple descriptions at once so can't return from for loop)
     desc = False
     for i in ind:
-        # If user enters "1d 2d 3d" instead of "1 2 3", show them descriptions from those episodes instead of playing them
+        # If user enters "1d 2d 3d" instead of "1 2 3", programme them descriptions from those episodes instead of playing them
+        # This completely ignores inputs without "d" so they won't be played
         if "d" in i:
             desc = True
             i = i.replace("d", "")
@@ -285,12 +293,23 @@ def results(items):
             else:
                 info = items[int(i)].additional
             print(items[int(i) - 1].title.upper() + ": " + info + "\n")
-    if desc:    # Early return in case of above
+    if desc:  # Early return in case of above
         return
+    if item_type == "programme":
+        if len(ind) > 1:
+            print("Only one programme can be chosen at once.")
+        else:
+            try:
+                index = int(ind[0])
+            except TypeError:
+                print("Input must be numeric unless you use the keyword \"d\"")
+                return
+            return items[index - 1]
     try:
         ind = [int(j) - 1 for j in ind]  # Make selection array into integers
         return [items[i] for i in ind]  # Pick items by selected indices -> ret = [items[n], items[x], items[y]]
-    except (ValueError, IndexError):  # At least one item is not an int or the selection can't be matched with the series list
+    # At least one item is not an int or the selection can't be matched with the series list
+    except (ValueError, IndexError):
         print("Invalid selection")
         return
 
@@ -308,7 +327,7 @@ if __name__ == "__main__":
     autoplay = True
     mode = "PLAY"
     while True:
-        #os.system('clear')
+        # os.system('clear')
         print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit (C cancels selection and returns this menu)\n"
               "0) Change mode(currently " + mode + ")")
         c = input("> ")
@@ -320,22 +339,25 @@ if __name__ == "__main__":
             continue
         if c == "1":
             items = listing_index(index)
-            chosen_serie = results(items)
+            chosen_serie = results(items, "programme")
         elif c == "2":
             items = search(str(input("Enter search query: ")))
-            chosen_serie = results(items)
+            chosen_serie = results(items, "programme")
         elif c == "3":
             cats = get_categories()
             for i, cat in enumerate(cats):
                 print("{0}: {1}".format(i + 1, cat.title))
-            c = int(input("> "))
+            try:
+                c = int(input("> "))
+            except ValueError:
+                print("Input must be numeric!")
             index = cats[c - 1].href
             items = get_cats_a_z(index)
-            chosen_serie = results(items)
+            chosen_serie = results(items, "programme")
         elif c == "4":
             letter = input("[A...Z]: ")
             items = a_z(letter.lower())
-            chosen_serie = results(items)
+            chosen_serie = results(items, "programme")
         elif c.lower() == "q":
             break
         elif c.lower() == "c":
@@ -343,13 +365,10 @@ if __name__ == "__main__":
         else:
             print("Invalid option")
             continue
-        if not chosen_serie:     # User cancelled from results()
-            continue
-        if len(chosen_serie) > 1:
-            print("Only one series can be chosen at once!")
+        if not chosen_serie:  # User cancelled from results()
             continue
         episodes = listing_serie(chosen_serie)
-        chosen_episodes = results(episodes)
+        chosen_episodes = results(episodes, "eps")
         if not chosen_episodes:
             continue
         if mode == "PLAY":
