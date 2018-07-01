@@ -1,0 +1,4 @@
+[General]
+autoplay = 1
+mode = PLAY
+

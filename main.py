@@ -5,13 +5,14 @@ from pdb import set_trace as st
 import requests
 import sys
 import os
+import configparser
 
 
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
                 Chrome/42.0.2311.90 Safari/537.36'}
 iplayer_url = "https://www.bbc.co.uk/iplayer"
 base_url = "https://www.bbc.co.uk"
-
+conf_file = "conf.txt"
 
 class Colours:
     BLUE = '\033[94m'
@@ -42,6 +43,31 @@ class BBCEpisode:
 class BBCCategory:
     href = ""
     title = ""
+
+
+class Config:
+    autoplay = 1
+    mode = "PLAY"
+
+
+def get_config():
+    config = Config()
+    cp = configparser.ConfigParser()
+    cp.read(conf_file)
+    try:
+        config.autoplay = bool(int(cp.get('General', 'Autoplay')))
+        config.mode = cp.get('General', 'Mode')
+    except configparser.NoSectionError:
+        print("Can't read conf.txt. Using default values.")
+    return config
+
+
+def set_config(key, val):
+    cp = configparser.ConfigParser()
+    cp.read(conf_file)
+    cp.set("General", key, val)
+    with open(conf_file, "w") as conf_w:
+        cp.write(conf_w)
 
 
 # Return the bs4 object that is used by nearly all of the functions
@@ -118,7 +144,7 @@ def listing_serie(parent_programme):
         episodes += get_eps_in_page(soup, parent_programme)
     else:  # if that method returns False, it didn't find any episodes
         return parent_programme
-    # programmes are distributed within pages(if there are more than x episodes), this will loop through each page and collect episodes from them
+    # Loop through pages(break on attibute error or if next button has class disabled -> no pages remaining)
     while True:
         try:
             # This is the link that the "next" button refers to.
@@ -174,7 +200,7 @@ def extract_link(href):
 
 
 def play(episodes, all_eps):
-    DEBUG = True
+    DEBUG = False
     # Is a one part "programme", maybe a documentary etc... OR autoplay is disabled
     if isinstance(episodes, BBCProgramme) or not all_eps:
         real_link = extract_link(episodes.href)
@@ -210,7 +236,7 @@ def play_msg(episode):
             "PLAYING " + Colours.GREEN + episode.parent_programme.upper() + Colours.END + " - " + Colours.BLUE + episode.title.upper() +
             Colours.END + "Press Q to STOP playback.")
     except AttributeError:  # If it's a one part programme
-        print("PLAYING " + Colours.GREEN + episode.title.upper() + Colours.END + ". Press Q to STOP playback.".format(
+        print("PLAYING " + Colours.GREEN + episode.title.upper() + Colours.END + "Press Q to STOP playback.".format(
             episode.title))
 
 
@@ -323,9 +349,10 @@ def download(episodes):
 
 
 if __name__ == "__main__":
+    conf = get_config()
     index = iplayer_url
-    autoplay = True
-    mode = "PLAY"
+    autoplay = conf.autoplay
+    mode = conf.mode
     while True:
         # os.system('clear')
         print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit (C cancels selection and returns this menu)\n"
@@ -334,8 +361,10 @@ if __name__ == "__main__":
         if c == "0":
             if mode == "PLAY":
                 mode = "DOWNLOAD"
+                set_config("mode", "DOWNLOAD")
             else:
                 mode = "PLAY"
+                set_config("mode", "PLAY")
             continue
         if c == "1":
             items = listing_index(index)
