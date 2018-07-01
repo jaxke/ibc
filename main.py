@@ -4,8 +4,8 @@ import youtube_dl
 from pdb import set_trace as st
 import requests
 import sys
+import os
 
-# TODO geo-bypass in ytdl?
 # TODO Episode name needs cleaning(leftover spaces and stops)
 
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
@@ -35,6 +35,7 @@ class BBCEpisode:
     title = ""
     episode_number = 0
     duration = ""
+    additional = ""
 
 
 class BBCCategory:
@@ -70,7 +71,7 @@ def get_categories():
     return categories
 
 
-# Get "all" items from a given category(under "View all Comedy/drama A-Z")
+# Get "all" items from a given category(under "View all Comedy/drama/... A-Z")
 def get_cats_a_z(cats_href):
     soup = get_soup(cats_href)
     view_az = base_url + soup.find("a", {"class": ["button", "button--clickable"]}).get("href")
@@ -81,11 +82,7 @@ def get_cats_a_z(cats_href):
 def listing_index(index_url):
     items = []
     soup = get_soup(index_url)
-    it = 0
     while True:
-        if it > 20: # TODO Remove this
-            print("DEBUG: Iterator has reached 20, breaking")
-            break
         el = soup.find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
         for e in el:
             if e.get("data-object-type") == "editorial-promo":
@@ -99,7 +96,6 @@ def listing_index(index_url):
             iplayer_item.additional = el_info.split("Description")[1].split(".")[1][1:]
             iplayer_item.duration = el_info.split("Duration")[1].split(".")[0][2:]
             items.append(iplayer_item)
-            # DISABLED == lnk pagination__direction pagination__direction--next pagination__direction--large lnk--disabled
         # Suck data from every page
         next_page = soup.find("a", {"class": ["pagination__direction--next"]})
         if next_page is None or 'lnk--disabled' in next_page.attrs['class']:    # Last page
@@ -107,12 +103,10 @@ def listing_index(index_url):
         else:
             r = requests.get(url=index_url + next_page.get("href"), headers=hdr)
             soup = BeautifulSoup(r.content, "html.parser")
-        it += 1
     return items
 
 
 # Once a serie is chosen, this will gather all episodes from it
-# TODO Does not work for a serie with no View all button
 def listing_serie(parent_serie):
     episodes = []
     soup = get_soup(parent_serie[0].href)
@@ -150,7 +144,7 @@ def get_eps_in_page(soup):
     episodes = []
     show_name = soup.find("title").text.split("- ")[1]
     try:
-        div_content = soup.find("div", {"class": ["grid", "list__grid"]}).find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]}) # grid list__grid
+        div_content = soup.find("div", {"class": ["grid", "list__grid"]}).find_all("a", {"class": ["content-item__link", "gel-layout", "gel-layout--flush"]})
         for content in div_content:
             el_info = content.get("aria-label")
             ep = BBCEpisode()
@@ -158,14 +152,14 @@ def get_eps_in_page(soup):
             ep.title = el_info.split("Description")[0]
             ep.duration = el_info.split("Duration: ")[1].split(".")[0]
             ep.show_name = show_name
+            ep.additional =el_info.split("Description: ")[1].split(" Duration:")[0]
             episodes.append(ep)
-        # return episodes[::-1]
         return episodes
     except AttributeError:
         return    # This is a one-part show
 
 
-# One-episode shows have this special type of link that has to be dug from the source once again(the href in its parameter is not a video link)
+# One-episode shows have a special type of link that has to be dug from the source once again(the href in its parameter is not a video link)
 # <link rel="canonical" href="..." > We want this href.
 def extract_link(href):
     soup = get_soup(href)
@@ -189,8 +183,8 @@ def play(episodes, all_eps):
         if len(episodes) > 1:
             for ep in episodes:
                 play_msg(ep)
-                # subprocess.call(["mpv", ep.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.call(["mpv", ep.href])
+                subprocess.call(["mpv", ep.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # subprocess.call(["mpv", ep.href])
                 if ep == episodes[-1]:  # If episode was not the last on the list, continue loop
                     return
         # ... Otherwise autoplay next episode
@@ -212,14 +206,6 @@ def play_msg(episode):
               Colours.END + "Press Q to STOP playback.")
     except AttributeError:  # If it's a one part show
         print("PLAYING " + Colours.GREEN + episode.title.upper() + Colours.END + ". Press Q to STOP playback.".format(episode.title))
-
-
-# TODO Not working ATM
-def download(episode):
-    ydl_opts = {"hls_prefer_native": True}
-    ydl_opts['outtmpl'] = "%(title)s.%(ext)s"
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([episode.href])
 
 
 # TODO Only finds items in first page, rest are usually irrelevant(and dev is lazy)
@@ -286,21 +272,52 @@ def results(items):
     if c == "c":
         return
     ind = c.split(" ")
+    # If desc gets defined as True, user has chosen to show descriptions for items and we need to return early(they
+    # might want multiple descriptions at once so can't return from for loop)
+    desc = False
+    for i in ind:
+        # If user enters "1d 2d 3d" instead of "1 2 3", show them descriptions from those episodes instead of playing them
+        if "d" in i:
+            desc = True
+            i = i.replace("d", "")
+            if items[int(i)].additional is None:
+                info = "No description available!"
+            else:
+                info = items[int(i)].additional
+            print(items[int(i) - 1].title.upper() + ": " + info + "\n")
+    if desc:    # Early return in case of above
+        return
     try:
         ind = [int(j) - 1 for j in ind]  # Make selection array into integers
-        return [items[i] for i in ind]  # Pick items by selected indices
+        return [items[i] for i in ind]  # Pick items by selected indices -> ret = [items[n], items[x], items[y]]
     except (ValueError, IndexError):  # At least one item is not an int or the selection can't be matched with the series list
         print("Invalid selection")
         return
 
 
-# TODO Fix download() and make it usable
+def download(episodes):
+    for episode in episodes:
+        ydl_opts = {"hls_prefer_native": True}
+        ydl_opts['outtmpl'] = "%(title)s.%(ext)s"
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([episode.href])
+
+
 if __name__ == "__main__":
     index = iplayer_url
     autoplay = True
+    mode = "PLAY"
     while True:
-        print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit (C cancels selection and returns this menu)")
+        #os.system('clear')
+        print("1) Index\n2) Search\n3) View categories\n4) A-Z\nQ) Quit (C cancels selection and returns this menu)\n"
+              "0) Change mode(currently " + mode + ")")
         c = input("> ")
+        if c == "0":
+            if mode == "PLAY":
+                mode = "DOWNLOAD"
+            else:
+                mode = "PLAY"
+            continue
         if c == "1":
             items = listing_index(index)
             chosen_serie = results(items)
@@ -326,14 +343,19 @@ if __name__ == "__main__":
         else:
             print("Invalid option")
             continue
+        if not chosen_serie:     # User cancelled from results()
+            continue
         if len(chosen_serie) > 1:
             print("Only one series can be chosen at once!")
             continue
         episodes = listing_serie(chosen_serie)
-        chosen_episode = results(episodes)
-        if not chosen_episode:
+        chosen_episodes = results(episodes)
+        if not chosen_episodes:
             continue
-        if autoplay:
-            play(chosen_episode, episodes)
+        if mode == "PLAY":
+            if autoplay:
+                play(chosen_episodes, episodes)
+            else:
+                play(chosen_episodes, False)
         else:
-            play(chosen_episode, False)
+            download(chosen_episodes)
