@@ -2,6 +2,7 @@ import subprocess
 from bs4 import BeautifulSoup
 import youtube_dl
 from pdb import set_trace as st
+from traceback import print_exc as pe
 import requests
 import sys
 import os
@@ -34,6 +35,7 @@ class BBCProgramme:
     additional = ""
     duration = ""
     channel = ""
+    pid = ""
 
 
 class BBCEpisode:
@@ -118,6 +120,7 @@ def listing_index(index_url):
             el_info = e.get("aria-label")
             el_href = e.get("href")
             iplayer_item = BBCProgramme()
+            iplayer_item.id = index_url.split("/")[-2]
             iplayer_item.href = base_url + el_href
             iplayer_item.title = el_info.split("Description")[0][:-2]
             iplayer_item.category = el_info.split("Description")[1].split(".")[0][2:]
@@ -134,7 +137,7 @@ def listing_index(index_url):
     return items
 
 
-# Once a serie is chosen, this will gather all episodes from it
+# Once a programme is chosen, this will gather all episodes from it
 # Parameter = BBCProgramme
 # Returns: list of BBCEpisode objeccts under parent serie.
 def listing_serie(parent_programme):
@@ -272,10 +275,11 @@ def cycle_over_search_page(soup):
             continue
         serie = BBCProgramme()
         serie.href = base_url + el.get("href")
+        serie.pid = serie.href.split("/")[-2]
         serie.title = el_info.split("Description")[0]
         serie.category = el_info.split("Description")[1].split(".")[0][2:]
         serie.additional = el_info.split("Description")[1].split(".")[1][1:]
-        ser = el_info.split("Duration")[1].split(".")[0][2:]
+        serie.duration = el_info.split("Duration")[1].split(".")[0][2:]
         found_items.append(serie)
     return found_items
 
@@ -309,7 +313,7 @@ def results(items, item_type):
         watched = ""
         if item_type == "eps":
             watched_list = get_watched()
-            if ser.pid in (item.pid for item in watched_list):
+            if ser.pid in watched_list:
                 watched = Colours.GREEN + "[X]" + Colours.END
         if ser.duration:
             print("{0}: {1}({2})".format(i + 1, Colours.RED + ser.title + Colours.END,
@@ -368,57 +372,67 @@ def download(episodes):
             ydl.download([episode.href])
 
 
-def dict_from_json(json_file, type):
-    obj_list = []
+def make_dict_from_json(json_file):
     open(json_file, "a").close()  # Make sure file exists before attempting to open it
     with open(json_file, "r") as json_r:
         try:
             json_contents = json.load(json_r)
         except json.decoder.JSONDecodeError:  # Bad data
             json_contents = {}
-        for item in json_contents:
-            try:
-                dict_el = json_contents[item]
-                if type == "eps":
-                    obj = BBCEpisode()
-                    obj.href = dict_el['href']
-                    obj.pid = item
-                    obj.title = dict_el['title']
-                    obj.duration = dict_el['duration']
-                    obj.additional = dict_el['additional']
-                    obj.channel = dict_el['channel']
-                    par_prog = BBCProgramme()
-                    par_prog.title = dict_el['programme']
-                    obj.parent_programme = par_prog
-                    obj_list.append(obj)
-                else:
-                    obj = BBCProgramme()
-                    obj.title = dict_el['title']
-                    obj.href = dict_el['href']
-                    obj.category = dict_el['category']
-                    obj.additional = dict_el['additional']
-                    obj.duration = dict_el['duration']
-                    obj.channel = dict_el['channel']
-                    obj_list.append(obj)
-            except KeyError:
-                continue
+    return json_contents
+
+
+def make_objects(objects_dict, type):
+    obj_list = []
+    for i, item in enumerate(objects_dict):
+        try:
+            dict_el = objects_dict[item]
+            if type == "eps":
+                obj = BBCEpisode()
+                obj.href = dict_el['href']
+                obj.pid = item
+                obj.title = dict_el['title']
+                obj.duration = dict_el['duration']
+                obj.additional = dict_el['additional']
+                obj.channel = dict_el['channel']
+                par_prog = BBCProgramme()
+                par_prog.title = dict_el['programme']
+                obj.parent_programme = par_prog
+                obj_list.append(obj)
+            else:
+                obj = BBCProgramme()
+                obj.pid = dict_el['pid']
+                obj.title = dict_el['title']
+                obj.href = dict_el['href']
+                obj.category = dict_el['category']
+                obj.additional = dict_el['additional']
+                obj.duration = dict_el['duration']
+                obj.channel = dict_el['channel']
+                obj_list.append(obj)
+        except KeyError:
+            continue
     return obj_list
 
 
 def get_watched():
-    watched_objs = dict_from_json(watched_list, "eps")
+    watched_objs = make_dict_from_json(watched_list)
+    #watched_objs = make_objects(dict_objs, "eps")
     global g_watched
     g_watched = watched_objs
     return watched_objs
 
 
-def mark_watched(episode):
+def mark_watched(obj):
     watched = get_watched()
     now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     # Use pids as the primary keys for this JSON
-    new_entry = {episode.pid: {"title": episode.title, "duration": episode.duration, "additional": episode.additional,
-                               "channel": episode.channel, "watched_at": now,
-                               "programme": episode.parent_programme.title, "href": episode.href}}
+    if isinstance(obj, BBCEpisode):
+        new_entry = {obj.pid: {"title": obj.title, "duration": obj.duration, "additional": obj.additional,
+                                   "channel": obj.channel, "watched_at": now,
+                                   "programme": obj.parent_programme.title, "href": obj.href, "pid": obj.pid}}
+    else:
+        new_entry = {obj.pid: {"title": obj.title, "duration": obj.duration, "additional": obj.additional,
+                               "channel": obj.channel, "watched_at": now, "programme": "", "href": obj.href, "pid": obj.pid}}
     merged = dict(watched, **new_entry)
     #watched.append(new_entry)
     with open(watched_list, "w") as dump_json:
@@ -438,13 +452,13 @@ def select_from_watched():
 
 
 def get_favourites():
-    return dict_from_json(favourites_list, "series")
+    return make_dict_from_json(favourites_list)
 
 
 def add_to_favourites(programme):
     favourites = get_favourites()
     new_entry = {programme.title: {"title": programme.title, "category": programme.category, "additional": programme.additional,
-                                   "duration": programme.duration, "channel": programme.channel, "href": programme.href}}
+                                   "duration": programme.duration, "channel": programme.channel, "href": programme.href, "pid": programme.pid}}
 
     merged = dict(favourites, **new_entry)
     with open(favourites_list, "w") as dump_json:
@@ -497,6 +511,7 @@ if __name__ == "__main__":
         elif c == "5":
             favs = get_favourites()
             if len(favs) != 0:
+                favs = make_objects(favs, "programme")
                 chosen_serie = results(favs, "programme")
             else:
                 os.system('clear')
