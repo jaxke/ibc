@@ -519,9 +519,9 @@ if __name__ == "__main__":
     mode = conf.mode
     dl_subs = conf.subs
     if dl_subs:
-        if os.path.isfile("tools/ttml2srt.py"):
+        if not os.path.isfile(os.path.dirname(os.path.realpath(__file__)) + "/tools/ttml2srt.py"):
             dl_subs = False
-            print("You have chosen to use subtitles but tools/ttml2srt.py wasn't found. See README for installation instructions,")
+            print("WARNING: You have chosen to use subtitles but tools/ttml2srt.py wasn't found. See README for installation instructions")
     while True:
         chosen_serie = None
         # os.system('clear')
