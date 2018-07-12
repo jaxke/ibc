@@ -336,9 +336,12 @@ def results(items, item_type):
         return
 
 
-def download(episodes):
+def download(episodes, subs):
     for episode in episodes:
-        ydl_opts = {"hls_prefer_native": True}
+        if subs:
+            ydl_opts = {"hls_prefer_native": True, "write_sub": True, "sub_format": "ttml", "convert_subs": "srt"}
+        else:
+            ydl_opts = {"hls_prefer_native": True}
         ydl_opts['outtmpl'] = "%(title)s.%(ext)s"
         with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             ydl.download([episode.href])
@@ -437,13 +440,15 @@ def add_to_favourites(programme):
         json.dump(merged, dump_json, indent=4)
     print(programme.title + " added to favourites.")
 
+
 '''
 Note: https://github.com/rg3/youtube-dl/issues/9073
 There's a bug in youtube-dl where you can't convert subtitles to srt when
 using skip-download. The subtitles must be extracted separately from the video
 Because it's not possible to download subtitles from mpv
 
-We need a script "ttml2srt"
+We need a script "ttml2srt" by codingcatgirl (https://github.com/codingcatgirl/ttml2srt) to convert tttml subs(NOT 
+supported by mpv) to srt.
 '''
 def download_subtitles(href):
     src_dir = os.path.dirname(os.path.realpath(__file__))
@@ -452,16 +457,18 @@ def download_subtitles(href):
     subprocess.call(["youtube-dl", href, "--write-sub", "--skip-download", "-o", "subtitles/subtitle"])
     tools_dir = src_dir + "/tools"
     sub_file = "subtitles/subtitle.en.ttml"
-    pipe_ps = subprocess.check_output(["python", tools_dir + "/ttml2srt.py", sub_file])#, ">", "subtitles/subtitle.srt"]) #, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Take the output straight from the pipe ...
+    pipe_ps = subprocess.check_output(["python", tools_dir + "/ttml2srt.py", sub_file])
     srt_file = "subtitles/subtitle.srt"
     open(srt_file, "a").close()
     with open(srt_file, "w") as srt_w:
         try:
-            srt_w.write(pipe_ps.decode('utf-8'))
+            srt_w.write(pipe_ps.decode('utf-8'))    # ... and write it to file
         except UnicodeEncodeError:
             print("Unicode encode error. Subtitles will not be loaded.")
             return
     return "subtitles/subtitle.srt"
+
 
 def play(episodes, all_eps, subs):
     subtitle = ""
@@ -512,7 +519,9 @@ if __name__ == "__main__":
     mode = conf.mode
     dl_subs = conf.subs
     if dl_subs:
-        print("You have chosen to use subtitles. Make sure you have ttml2srt.py in tools/ or disable subtitles entirely in the config.")
+        if os.path.isfile("tools/ttml2srt.py"):
+            dl_subs = False
+            print("You have chosen to use subtitles but tools/ttml2srt.py wasn't found. See README for installation instructions,")
     while True:
         chosen_serie = None
         # os.system('clear')
