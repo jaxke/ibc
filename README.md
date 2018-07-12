@@ -7,6 +7,7 @@ Front end for BBC iPlayer
 * List programmes from the iPlayer home or A-Z lists  
 * Search using keywords  
 * List by categories  
+* Subtitles  
 
 ## Installation
 ```  
@@ -18,6 +19,14 @@ python main.py
 * mpv  
 * youtube-dl  
 * BeautifulSoup4  
+* [OPTIONAL] [ttml2srt by codingcatgirl](https://github.com/codingcatgirl/ttml2srt) for subtitles when streaming(dependency not needed for downloads)
+
+## Activating subtitles on streams  
+In conf.txt:
+```
+downloadsubs = 1  
+```
+And download the script from the link from above. Place the script into tools/.
 
 ## Note
 You need to be located in the UK to view iPlayer content

@@ -64,8 +64,9 @@ def get_config():
     cp = configparser.ConfigParser()
     cp.read(conf_file)
     try:
-        config.autoplay = bool(int(cp.get('General', 'Autoplay')))
-        config.mode = cp.get('General', 'Mode')
+        config.autoplay = bool(int(cp.get('General', 'autoplay')))
+        config.mode = cp.get('General', 'mode')
+        config.subs = bool(int(cp.get('General', 'downloadsubs')))
     except configparser.NoSectionError:
         print("Can't read conf.txt. Using default values.")
     return config
@@ -210,36 +211,7 @@ def extract_link(href):
                 return link.get("href")
 
 
-def play(episodes, all_eps):
-    DEBUG = True
-    # Is a one part "programme", maybe a documentary etc... OR autoplay is disabled
-    if isinstance(episodes, BBCProgramme) or not all_eps:
-        real_link = extract_link(episodes.href)
-        play_msg(episodes)
-        subprocess.call(["mpv", real_link], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return
-    else:
-        # If more than one episode was selected, play them back to back
-        if len(episodes) > 1:
-            for ep in episodes:
-                play_msg(ep)
-                if DEBUG:
-                    subprocess.call(["mpv", ep.href])
-                else:
-                    subprocess.call(["mpv", ep.href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if ep == episodes[-1]:  # If episode was not the last on the list, continue loop
-                    return
-        # ... Otherwise autoplay next episode
-        else:
-            ep_index = all_eps.index(episodes[0])
-            for i in range(ep_index, len(all_eps)):
-                play_msg(all_eps[i])
-                subprocess.call(["mpv", all_eps[i].href], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if i != len(all_eps) - 1:
-                    if str(input("Watch next episode Y/N: ")).lower() == "y":
-                        continue
-                    else:
-                        return
+
 
 
 def play_msg(episode):
@@ -465,6 +437,72 @@ def add_to_favourites(programme):
         json.dump(merged, dump_json, indent=4)
     print(programme.title + " added to favourites.")
 
+'''
+Note: https://github.com/rg3/youtube-dl/issues/9073
+There's a bug in youtube-dl where you can't convert subtitles to srt when
+using skip-download. The subtitles must be extracted separately from the video
+Because it's not possible to download subtitles from mpv
+
+We need a script "ttml2srt"
+'''
+def download_subtitles(href):
+    src_dir = os.path.dirname(os.path.realpath(__file__))
+    subs_temp_dir = src_dir + "/subtitles"
+    # will write the subtitle to ./subtitles/subtitle.en.ttml.
+    subprocess.call(["youtube-dl", href, "--write-sub", "--skip-download", "-o", "subtitles/subtitle"])
+    tools_dir = src_dir + "/tools"
+    sub_file = "subtitles/subtitle.en.ttml"
+    pipe_ps = subprocess.check_output(["python", tools_dir + "/ttml2srt.py", sub_file])#, ">", "subtitles/subtitle.srt"]) #, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    srt_file = "subtitles/subtitle.srt"
+    open(srt_file, "a").close()
+    with open(srt_file, "w") as srt_w:
+        try:
+            srt_w.write(pipe_ps.decode('utf-8'))
+        except UnicodeEncodeError:
+            print("Unicode encode error. Subtitles will not be loaded.")
+            return
+    return "subtitles/subtitle.srt"
+
+def play(episodes, all_eps, subs):
+    subtitle = ""
+    DEBUG = True
+    # Is a one part "programme", maybe a documentary etc... OR autoplay is disabled
+    if isinstance(episodes, BBCProgramme) or not all_eps:
+        real_link = extract_link(episodes.href)
+        play_msg(episodes)
+        if subs:
+            subtitle = "--sub-file=" + download_subtitles(real_link)
+        subprocess.call(["mpv", real_link], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    else:
+        # If more than one episode was selected, play them back to back
+        if len(episodes) > 1:
+            for ep in episodes:
+                if subs:
+                    subtitle = "--sub-file=" + download_subtitles(ep.href)
+                play_msg(ep)
+                if DEBUG:
+                    subprocess.call(["mpv", ep.href, subtitle])
+                else:
+                    subprocess.call(["mpv", ep.href, subtitle], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if ep == episodes[-1]:  # If episode was not the last on the list, continue loop
+                    return
+        # ... Otherwise autoplay next episode
+        else:
+            ep_index = all_eps.index(episodes[0])
+            for i in range(ep_index, len(all_eps)):
+                if subs:
+                    subtitle = "--sub-file=" + download_subtitles(all_eps[i].href)
+                    if not subtitle:
+                        subtitle = ""
+                play_msg(all_eps[i])
+                subprocess.call(["mpv", all_eps[i].href, subtitle], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if i != len(all_eps) - 1:
+                    if str(input("Watch next episode Y/N: ")).lower() == "y":
+                        continue
+                    else:
+                        return
+
 
 if __name__ == "__main__":
     TEST = True
@@ -472,6 +510,9 @@ if __name__ == "__main__":
     index = iplayer_url
     autoplay = conf.autoplay
     mode = conf.mode
+    dl_subs = conf.subs
+    if dl_subs:
+        print("You have chosen to use subtitles. Make sure you have ttml2srt.py in tools/ or disable subtitles entirely in the config.")
     while True:
         chosen_serie = None
         # os.system('clear')
@@ -529,10 +570,12 @@ if __name__ == "__main__":
         chosen_episodes = results(episodes, "eps")
         if not chosen_episodes:
             continue
+        else:
+            subs = None
         if mode == "PLAY":
             if autoplay:
-                play(chosen_episodes, episodes)
+                play(chosen_episodes, episodes, dl_subs)
             else:
-                play(chosen_episodes, False)
+                play(chosen_episodes, False, dl_subs)
         else:
-            download(chosen_episodes)
+            download(chosen_episodes, dl_subs)
