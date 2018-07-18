@@ -283,10 +283,12 @@ def results(items, item_type):
             return items[0]
     for i, ser in enumerate(items):
         watched = ""
-        if item_type == "eps":
-            watched_list = get_watched()
-            if ser.pid in watched_list:
+        if item_type == "eps" or item_type == "hist":
+            watched_list = get_watched("dict")
+            if ser.pid in watched_list and item_type != "hist":
                 watched = Colours.GREEN + "[X]" + Colours.END
+        if item_type == "hist":
+            ser.title = "(" + ser.parent_programme.title + ") " + ser.title
         if ser.duration:
             print("{0}: {1}({2})".format(i + 1, Colours.RED + ser.title + Colours.END,
                                          Colours.BLUE + ser.duration + Colours.END), end="")
@@ -389,16 +391,21 @@ def make_objects(objects_dict, type):
     return obj_list
 
 
-def get_watched():
+def order_watched(watched):
+    watched_list = []
+    return (make_objects(watched, "eps"))
+
+
+def get_watched(ret_type):
     watched_objs = make_dict_from_json(watched_list)
-    #watched_objs = make_objects(dict_objs, "eps")
-    global g_watched
-    g_watched = watched_objs
-    return watched_objs
+    if ret_type == "dict":
+        return watched_objs
+    else:
+        return make_objects(watched_objs, "eps")
 
 
 def mark_watched(obj):
-    watched = get_watched()
+    watched = get_watched("dict")
     now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     # Use pids as the primary keys for this JSON
     if isinstance(obj, BBCEpisode):
@@ -416,9 +423,10 @@ def mark_watched(obj):
 
 # Feature disabled
 def select_from_watched():
+    # TODO this global is pointless(more complexity for little value)
     global g_watched
     if g_watched is None:
-        get_watched()   # Creates global var g_watched
+        get_watched("dict")   # Creates global var g_watched
     if g_watched:       # Test if anything was added in the block above
         return results(g_watched, "eps")
     else:
@@ -450,6 +458,7 @@ Because it's not possible to download subtitles from mpv
 We need a script "ttml2srt" by codingcatgirl (https://github.com/codingcatgirl/ttml2srt) to convert tttml subs(NOT 
 supported by mpv) to srt.
 '''
+# TODO Will return False when selecting from history !!
 def download_subtitles(href):
     src_dir = os.path.dirname(os.path.realpath(__file__))
     subs_temp_dir = src_dir + "/subtitles"
@@ -474,13 +483,15 @@ def play(episodes, all_eps, subs):
     subtitle = ""
     DEBUG = True
     # Is a one part "programme", maybe a documentary etc... OR autoplay is disabled
-    if isinstance(episodes, BBCProgramme) or not all_eps:
+    if isinstance(episodes, BBCProgramme):
         real_link = extract_link(episodes.href)
-        play_msg(episodes)
         if subs:
             subtitle = "--sub-file=" + download_subtitles(real_link)
         subprocess.call(["mpv", real_link], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
+    if not all_eps:
+        play_msg(episodes)
+
     else:
         # If more than one episode was selected, play them back to back
         if len(episodes) > 1:
@@ -499,9 +510,11 @@ def play(episodes, all_eps, subs):
             ep_index = all_eps.index(episodes[0])
             for i in range(ep_index, len(all_eps)):
                 if subs:
-                    subtitle = "--sub-file=" + download_subtitles(all_eps[i].href)
+                    subtitle = download_subtitles(all_eps[i].href)
                     if not subtitle:
                         subtitle = ""
+                    else:
+                        subtitle = "--sub-file=" + subtitle
                 play_msg(all_eps[i])
                 subprocess.call(["mpv", all_eps[i].href, subtitle], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if i != len(all_eps) - 1:
@@ -515,7 +528,6 @@ if __name__ == "__main__":
     TEST = True
     conf = get_config()
     index = iplayer_url
-    autoplay = conf.autoplay
     mode = conf.mode
     dl_subs = conf.subs
     if dl_subs:
@@ -523,6 +535,8 @@ if __name__ == "__main__":
             dl_subs = False
             print("WARNING: You have chosen to use subtitles but tools/ttml2srt.py wasn't found. See README for installation instructions")
     while True:
+        # Autoplay's value may change during this loop(see option "6")
+        autoplay = conf.autoplay
         chosen_serie = None
         # os.system('clear')
         print("1) Index\n2) Search\n3) View categories\n4) A-Z\n5) Favourites\nQ) Quit (C cancels selection and returns this menu)\n"
@@ -540,9 +554,11 @@ if __name__ == "__main__":
         if c == "1":
             items = listing_index(index)
             chosen_serie = results(items, "programme")
+            episodes = listing_serie(chosen_serie)
         elif c == "2":
             items = search(str(input("Enter search query: ")))
             chosen_serie = results(items, "programme")
+            episodes = listing_serie(chosen_serie)
         elif c == "3":
             cats = get_categories()
             for i, cat in enumerate(cats):
@@ -554,18 +570,23 @@ if __name__ == "__main__":
             index = cats[c - 1].href
             items = get_cats_a_z(index)
             chosen_serie = results(items, "programme")
+            episodes = listing_serie(chosen_serie)
         elif c == "4":
             letter = input("[A...Z]: ")
             items = a_z(letter.lower())
             chosen_serie = results(items, "programme")
+            episodes = listing_serie(chosen_serie)
         elif c == "5":
             favs = get_favourites()
             if len(favs) != 0:
                 favs = make_objects(favs, "programme")
                 chosen_serie = results(favs, "programme")
+                episodes = listing_serie(chosen_serie)
             else:
                 os.system('clear')
                 print(Colours.RED + "You have not added anything to favourites!" + Colours.END)
+        elif c == "6":
+            episodes = get_watched("list")
         elif c.lower() == "q":
             break
         elif c.lower() == "c":
@@ -573,18 +594,20 @@ if __name__ == "__main__":
         else:
             print("Invalid option")
             continue
-        if not chosen_serie:  # User cancelled from results()
-            continue
-        episodes = listing_serie(chosen_serie)
-        chosen_episodes = results(episodes, "eps")
+        if c == "6":
+            chosen_episodes = results(episodes, "hist")
+        else:
+            chosen_episodes = results(episodes, "eps")
+        if c == "6":    # TODO watch out
+            episodes = chosen_episodes
         if not chosen_episodes:
             continue
         else:
-            subs = None
+            subs = None # TODO WHAT
         if mode == "PLAY":
             if autoplay:
                 play(chosen_episodes, episodes, dl_subs)
             else:
-                play(chosen_episodes, False, dl_subs)
+                play(chosen_episodes[0], False, dl_subs)    # TODO WILL NOT work if autoplay is taken off from config(only on history)
         else:
             download(chosen_episodes, dl_subs)

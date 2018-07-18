@@ -1,5 +1,5 @@
 [General]
 autoplay = 1
-mode = DOWNLOAD
+mode = PLAY
 downloadsubs = 1
 
