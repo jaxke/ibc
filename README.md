@@ -8,6 +8,7 @@ Front end for BBC iPlayer
 * Search using keywords  
 * List by categories  
 * Subtitles  
+* Watch history  
 
 ## Installation
 ```  
@@ -32,8 +33,9 @@ It is possible to mark programmes as favourites by adding an f letter to your se
 In conf.txt:
 ```
 downloadsubs = 1  
-```
-And download the script from the link from above. Place the script into tools/.
+```  
+or enable them directly from the main menu.  
+You need to have the script from above as tools/ttml2srt.py.  
 
 ## Note
 You need to be located in the UK to view iPlayer content

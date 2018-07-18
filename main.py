@@ -522,6 +522,14 @@ def play(episodes, all_eps, subs):
                         return
 
 
+def converter_script_exists():
+    if not os.path.isfile(os.path.dirname(os.path.realpath(__file__)) + "/tools/ttml2srt.py"):
+        print(
+            Colours.RED + "You have chosen to use subtitles but tools/ttml2srt.py wasn't found. See README for installation instructions." + Colours.END)
+        return
+    else: return True
+
+
 if __name__ == "__main__":
     conf = get_config()
     index = iplayer_url
@@ -529,9 +537,7 @@ if __name__ == "__main__":
     dl_subs = conf.subs
     autoplay = conf.autoplay
     if dl_subs:
-        if not os.path.isfile(os.path.dirname(os.path.realpath(__file__)) + "/tools/ttml2srt.py"):
-            dl_subs = False
-            print("WARNING: You have chosen to use subtitles but tools/ttml2srt.py wasn't found. See README for installation instructions")
+        dl_subs = converter_script_exists()
     while True:
         enable_disable_subs = "Enable " if not dl_subs else "Disable "
         chosen_serie = None
@@ -548,15 +554,17 @@ if __name__ == "__main__":
                 mode = "PLAY"
                 set_config("mode", "PLAY")
             continue
-        if c == "9":
+        elif c == "9":
             os.system('clear')
             if dl_subs == False:
-                dl_subs = True
-                set_config("downloadsubs", 1)
+                if converter_script_exists():
+                    dl_subs = True
+                    set_config("downloadsubs", 1)
             else:
                 dl_subs = False
                 set_config("downloadsubs", 0)
-        if c == "1":
+            continue
+        elif c == "1":
             items = listing_index(index)
             chosen_serie = results(items, "programme")
             episodes = listing_serie(chosen_serie)
