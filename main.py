@@ -539,7 +539,7 @@ if __name__ == "__main__":
         autoplay = conf.autoplay
         chosen_serie = None
         # os.system('clear')
-        print("1) Index\n2) Search\n3) View categories\n4) A-Z\n5) Favourites\nQ) Quit (C cancels selection and returns this menu)\n"
+        print("1) Index\n2) Search\n3) View categories\n4) A-Z\n5) Favourites\n6) History\nQ) Quit (C cancels selection and returns this menu)\n"
               "0) Change mode(currently " + mode + ")")
         c = input("> ")
         if c == "0":
