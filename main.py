@@ -224,7 +224,7 @@ def play_msg(episode):
     mark_watched(episode)
     try:
         print(
-            "PLAYING " + Colours.GREEN + episode.parent_programme.upper() + Colours.END + " - " + Colours.BLUE + episode.title.upper() +
+            "PLAYING " + Colours.GREEN + episode.parent_programme.title.upper() + Colours.END + " - " + Colours.BLUE + episode.title.upper() +
             Colours.END + "Press Q to STOP playback.")
     except AttributeError:  # If it's a one part programme
         print("PLAYING " + Colours.GREEN + episode.title.upper() + Colours.END + "Press Q to STOP playback.".format(
@@ -280,6 +280,7 @@ def a_z(letter):
 
 # This function formats and lists "results" and asks for the input. Merely there to reduce redundancy in __main__
 def results(items, item_type):
+    os.system('clear')
     # "items" is a singular BBCProgramme and therefore there are no episodes of it, it's playable by itself(maybe 1-part documentary)
     if isinstance(items, BBCProgramme):
         #print(items.title.upper() + ": " + items.additional)
@@ -287,6 +288,8 @@ def results(items, item_type):
     else:  # Play first EPISODE if only one exists
         if len(items) == 1 and item_type == "eps":
             return items[0]
+    if item_type == "eps":
+        print(Colours.GREEN + items[0].parent_programme.title.upper() + Colours.END + "\n")
     for i, ser in enumerate(items):
         watched = ""
         if item_type == "eps" or item_type == "hist":
@@ -344,6 +347,7 @@ def results(items, item_type):
         return
 
 
+# TODO Does not work properly
 def download(episodes, subs):
     for episode in episodes:
         if subs:
@@ -588,6 +592,10 @@ if __name__ == "__main__":
                 print(Colours.RED + "You have not added anything to favourites!" + Colours.END)
         elif c == "6":
             episodes = get_watched("list")
+            if len(episodes) == 0:
+                os.system('clear')
+                print(Colours.RED + "You have not watched anything yet!" + Colours.END)
+                continue
         elif c.lower() == "q":
             break
         elif c.lower() == "c":
