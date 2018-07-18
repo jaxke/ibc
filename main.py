@@ -10,14 +10,16 @@ import configparser
 import json
 import time
 
+# TODO programme titles often contain spaces and stops that don't belong there
 
+
+# Headers for bs4
 hdr = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
                 Chrome/42.0.2311.90 Safari/537.36'}
 iplayer_url = "https://www.bbc.co.uk/iplayer"
 base_url = "https://www.bbc.co.uk"
 conf_file = "conf.txt"
 watched_list = "watched.json"
-g_watched = None  # This will be filled out if processed to cache it, not generated automatically.
 favourites_list = "favourites.json"
 
 
@@ -57,6 +59,7 @@ class BBCCategory:
 class Config:
     autoplay = 1
     mode = "PLAY"
+    subs = 0
 
 
 def get_config():
@@ -73,6 +76,9 @@ def get_config():
 
 
 def set_config(key, val):
+    # Can't set value to anything else than str
+    if type(val) == int:
+        val = str(val)
     cp = configparser.ConfigParser()
     cp.read(conf_file)
     cp.set("General", key, val)
@@ -421,19 +427,6 @@ def mark_watched(obj):
         json.dump(merged, dump_json, indent=4)  # using indent will make the json file look better(everything's not on one line)
 
 
-# Feature disabled
-def select_from_watched():
-    # TODO this global is pointless(more complexity for little value)
-    global g_watched
-    if g_watched is None:
-        get_watched("dict")   # Creates global var g_watched
-    if g_watched:       # Test if anything was added in the block above
-        return results(g_watched, "eps")
-    else:
-        print("You have not watched anything yet!")
-        return
-
-
 def get_favourites():
     return make_dict_from_json(favourites_list)
 
@@ -458,7 +451,8 @@ Because it's not possible to download subtitles from mpv
 We need a script "ttml2srt" by codingcatgirl (https://github.com/codingcatgirl/ttml2srt) to convert tttml subs(NOT 
 supported by mpv) to srt.
 '''
-# TODO Will return False when selecting from history !!
+
+
 def download_subtitles(href):
     src_dir = os.path.dirname(os.path.realpath(__file__))
     subs_temp_dir = src_dir + "/subtitles"
@@ -489,9 +483,6 @@ def play(episodes, all_eps, subs):
             subtitle = "--sub-file=" + download_subtitles(real_link)
         subprocess.call(["mpv", real_link], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
-    if not all_eps:
-        play_msg(episodes)
-
     else:
         # If more than one episode was selected, play them back to back
         if len(episodes) > 1:
@@ -505,19 +496,22 @@ def play(episodes, all_eps, subs):
                     subprocess.call(["mpv", ep.href, subtitle], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if ep == episodes[-1]:  # If episode was not the last on the list, continue loop
                     return
-        # ... Otherwise autoplay next episode
+        # ... Otherwise autoplay next episode(if len(all_eps) > 1)
         else:
             ep_index = all_eps.index(episodes[0])
             for i in range(ep_index, len(all_eps)):
                 if subs:
+                    # Will return None on failure
                     subtitle = download_subtitles(all_eps[i].href)
                     if not subtitle:
+                        # Append nothing to mpv call if subtitles can't be downloaded
                         subtitle = ""
                     else:
                         subtitle = "--sub-file=" + subtitle
                 play_msg(all_eps[i])
                 subprocess.call(["mpv", all_eps[i].href, subtitle], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if i != len(all_eps) - 1:
+                    # Will return on anything else than 'y'
                     if str(input("Watch next episode Y/N: ")).lower() == "y":
                         continue
                     else:
@@ -525,22 +519,21 @@ def play(episodes, all_eps, subs):
 
 
 if __name__ == "__main__":
-    TEST = True
     conf = get_config()
     index = iplayer_url
     mode = conf.mode
     dl_subs = conf.subs
+    autoplay = conf.autoplay
     if dl_subs:
         if not os.path.isfile(os.path.dirname(os.path.realpath(__file__)) + "/tools/ttml2srt.py"):
             dl_subs = False
             print("WARNING: You have chosen to use subtitles but tools/ttml2srt.py wasn't found. See README for installation instructions")
     while True:
-        # Autoplay's value may change during this loop(see option "6")
-        autoplay = conf.autoplay
+        enable_disable_subs = "Enable " if not dl_subs else "Disable "
         chosen_serie = None
         # os.system('clear')
         print("1) Index\n2) Search\n3) View categories\n4) A-Z\n5) Favourites\n6) History\nQ) Quit (C cancels selection and returns this menu)\n"
-              "0) Change mode(currently " + mode + ")")
+              "0) Change mode(currently " + mode + ")\n9) " + enable_disable_subs + "subtitles")
         c = input("> ")
         if c == "0":
             os.system('clear')
@@ -551,6 +544,14 @@ if __name__ == "__main__":
                 mode = "PLAY"
                 set_config("mode", "PLAY")
             continue
+        if c == "9":
+            os.system('clear')
+            if dl_subs == False:
+                dl_subs = True
+                set_config("downloadsubs", 1)
+            else:
+                dl_subs = False
+                set_config("downloadsubs", 0)
         if c == "1":
             items = listing_index(index)
             chosen_serie = results(items, "programme")
@@ -596,18 +597,18 @@ if __name__ == "__main__":
             continue
         if c == "6":
             chosen_episodes = results(episodes, "hist")
+            # chosen_episodes == episodes so that play() will not seek for a "next" item because the user probably doesn't
+            # want to play another item from history(doesn't stand for the purpose of autoplay)
+            episodes = chosen_episodes
         else:
             chosen_episodes = results(episodes, "eps")
-        if c == "6":    # TODO watch out
-            episodes = chosen_episodes
+
         if not chosen_episodes:
             continue
-        else:
-            subs = None # TODO WHAT
         if mode == "PLAY":
             if autoplay:
                 play(chosen_episodes, episodes, dl_subs)
             else:
-                play(chosen_episodes[0], False, dl_subs)    # TODO WILL NOT work if autoplay is taken off from config(only on history)
+                play(chosen_episodes, chosen_episodes, dl_subs)
         else:
             download(chosen_episodes, dl_subs)
