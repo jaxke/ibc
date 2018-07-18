@@ -13,6 +13,7 @@ Front end for BBC iPlayer
 ## Installation
 ```  
 git clone https://github.com/jaxke/ibc  
+cd ibc  
 python main.py  
 ```
 
@@ -34,8 +35,7 @@ In conf.txt:
 ```
 downloadsubs = 1  
 ```  
-or enable them directly from the main menu.  
-You need to have the script from above as tools/ttml2srt.py.  
+or enable them directly from the main menu. You need to have the script from above as tools/ttml2srt.py.  
 
 ## Note
 You need to be located in the UK to view iPlayer content
